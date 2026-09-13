@@ -14,6 +14,7 @@ import {
   Trash2,
   HardDriveDownload,
   HardDriveUpload,
+  Globe,
 } from "lucide-vue-next";
 import * as api from "../lib/api";
 import FolderPickerModal from "../components/common/FolderPickerModal.vue";
@@ -32,6 +33,13 @@ const asmrSaved = ref(false);
 
 const hasAsmrToken = computed(() => asmrToken.value.trim().length > 0);
 
+// 网络代理
+const proxyUrl = ref("");
+const proxyDlsite = ref(false);
+const proxyAsmrone = ref(false);
+const proxySaved = ref(false);
+const proxySaving = ref(false);
+
 // 目录选择器与数据库导入
 const showFolderPicker = ref(false);
 const importFileInput = ref<HTMLInputElement | null>(null);
@@ -45,6 +53,9 @@ onMounted(async () => {
   downloadStore.loadSettings();
   downloadDir.value = downloadStore.settings.download_dir;
   asmrToken.value = s.asmr_one_token || "";
+  proxyUrl.value = s.proxy_url || "";
+  proxyDlsite.value = s.proxy_dlsite;
+  proxyAsmrone.value = s.proxy_asmrone;
 });
 
 function selectTheme(t: ThemeName) {
@@ -69,6 +80,24 @@ async function saveAsmrToken() {
   } catch (e) {
     console.error("保存 asmr.one Token 失败", e);
     alert(`保存失败：${e}`);
+  }
+}
+
+/** 保存网络代理配置（对所有新发起的请求立即生效） */
+async function saveProxy() {
+  proxySaving.value = true;
+  try {
+    await api.setSettings(undefined, undefined, {
+      url: proxyUrl.value.trim(),
+      dlsite: proxyDlsite.value,
+      asmrone: proxyAsmrone.value,
+    });
+    proxySaved.value = true;
+    setTimeout(() => (proxySaved.value = false), 1500);
+  } catch (e) {
+    alert(`保存失败：${e}`);
+  } finally {
+    proxySaving.value = false;
   }
 }
 
@@ -218,6 +247,63 @@ function handleDirPicked(dir: string) {
         <button v-if="hasAsmrToken" class="btn-ghost !text-xs !text-accent" @click="clearAsmr">
           <Trash2 :size="13" /> 清除
         </button>
+      </div>
+    </section>
+
+    <!-- 网络代理 -->
+    <section class="card p-4">
+      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
+        <Globe :size="14" class="text-accent" /> 网络代理
+      </h3>
+      <div class="flex gap-2">
+        <input
+          v-model="proxyUrl"
+          class="input flex-1 !text-xs font-mono"
+          placeholder="代理地址，如 http://127.0.0.1:8502"
+          @keyup.enter="saveProxy"
+        />
+        <button class="btn-primary !text-xs" :disabled="proxySaving" @click="saveProxy">
+          <Check v-if="!proxySaved" :size="13" />
+          <Loader2 v-else :size="13" class="animate-spin" />
+          {{ proxySaved ? "已保存" : "保存" }}
+        </button>
+      </div>
+      <p class="text-[11px] text-muted mt-2">
+        DLsite 与 asmr.one 的抓取、下载可分别决定是否走此代理（仅支持 HTTP 代理，地址可不带 http:// 前缀）。保存后对新发起的请求立即生效。
+      </p>
+      <div class="mt-3 pt-3 border-t border-bg-border space-y-2.5">
+        <label class="flex items-center justify-between cursor-pointer select-none">
+          <span class="text-xs text-white/80">DLsite 请求走代理</span>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="proxyDlsite"
+            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
+            :class="proxyDlsite ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
+            @click="proxyDlsite = !proxyDlsite"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+              :class="proxyDlsite ? 'translate-x-4' : ''"
+            />
+          </button>
+        </label>
+        <label class="flex items-center justify-between cursor-pointer select-none">
+          <span class="text-xs text-white/80">ASMR ONE 请求走代理</span>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="proxyAsmrone"
+            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
+            :class="proxyAsmrone ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
+            @click="proxyAsmrone = !proxyAsmrone"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+              :class="proxyAsmrone ? 'translate-x-4' : ''"
+            />
+          </button>
+        </label>
       </div>
     </section>
 

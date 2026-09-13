@@ -1,4 +1,5 @@
 pub mod download;
+pub mod dlsite;
 pub mod events;
 pub mod fs;
 pub mod import;

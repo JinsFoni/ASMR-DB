@@ -367,8 +367,9 @@ pub async fn list_asmrone_tracks(
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<Track>>, AppError> {
     let token = get_asmr_token(&state).await?;
+    let proxy = get_proxy_config(&state).await?;
     let files = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_audio_files(&q.rj, Some(&token)).map_err(AppError::new)
+        crate::api::asmrone::fetch_audio_files(&q.rj, Some(&token), &proxy).map_err(AppError::new)
     })
     .await
     .map_err(AppError::new)??;
@@ -411,9 +412,10 @@ pub async fn list_asmrone_tree(
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<crate::api::asmrone::AsmrTreeNode>>, AppError> {
     let token = get_asmr_token(&state).await?;
+    let proxy = get_proxy_config(&state).await?;
     let rj = q.rj;
     let tree = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_file_tree(&rj, Some(&token)).map_err(AppError::new)
+        crate::api::asmrone::fetch_file_tree(&rj, Some(&token), &proxy).map_err(AppError::new)
     })
     .await
     .map_err(AppError::new)??;
@@ -428,6 +430,18 @@ async fn get_asmr_token(state: &SharedState) -> Result<String, AppError> {
             .ok()
             .flatten()
             .unwrap_or_default())
+    })
+    .await
+    .map_err(AppError::new)?
+}
+
+async fn get_proxy_config(
+    state: &SharedState,
+) -> Result<crate::api::proxy::ProxyConfig, AppError> {
+    let state2 = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = state2.db.lock().map_err(AppError::new)?;
+        Ok(crate::api::proxy::ProxyConfig::from_conn(&conn))
     })
     .await
     .map_err(AppError::new)?

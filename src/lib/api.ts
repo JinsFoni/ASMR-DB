@@ -12,6 +12,7 @@ import type {
   WorkListResponse,
   AsmrTreeNode,
   AsmrDownloadFile,
+  DlsiteRankingResponse,
 } from "./types";
 
 // ============================ HTTP 基础封装 ============================
@@ -301,6 +302,9 @@ export function getSettings(): Promise<{
   download_dir: string | null;
   theme: string;
   asmr_one_token: string | null;
+  proxy_url: string | null;
+  proxy_dlsite: boolean;
+  proxy_asmrone: boolean;
 }> {
   return get("/api/settings");
 }
@@ -315,9 +319,16 @@ export function clearAsmrToken(): Promise<void> {
 
 export function setSettings(
   theme?: string,
-  downloadDir?: string
+  downloadDir?: string,
+  proxy?: { url?: string; dlsite?: boolean; asmrone?: boolean }
 ): Promise<void> {
-  return post("/api/settings", { theme, downloadDir });
+  return post("/api/settings", {
+    theme,
+    downloadDir,
+    proxyUrl: proxy?.url,
+    proxyDlsite: proxy?.dlsite,
+    proxyAsmrone: proxy?.asmrone,
+  });
 }
 
 export function getDbPath(): Promise<string> {
@@ -346,6 +357,18 @@ export function importDatabase(file: File): Promise<string> {
 
 export function openFolder(path: string): Promise<void> {
   return post("/api/settings/open-folder", { path });
+}
+
+// ---------- DLsite 排行榜 ----------
+
+/** term: day | week | month | year | total；limit: 20/50/100 */
+export function getDlsiteRanking(term: string, limit: number): Promise<DlsiteRankingResponse> {
+  return get(`/api/dlsite/ranking${qs({ term, limit })}`);
+}
+
+/** 手动触发榜单抓取；term 不传时刷新全部周期，耗时较长。 */
+export function refreshDlsiteRanking(term?: string): Promise<{ ok: boolean; refreshed: string[] }> {
+  return post("/api/dlsite/ranking/refresh", term ? { term } : {});
 }
 
 // ---------- 目录浏览（替代桌面端原生目录选择框） ----------

@@ -10,6 +10,16 @@ const router = createRouter({
       component: () => import("../routes/HomePage.vue"),
     },
     {
+      path: "/dlsite",
+      name: "dlsite",
+      component: () => import("../routes/DlsitePage.vue"),
+    },
+    {
+      path: "/dlsite/work/:rj",
+      name: "dlsite-work-detail",
+      component: () => import("../routes/DlsiteDetailPage.vue"),
+    },
+    {
       path: "/work/:id",
       name: "work-detail",
       component: () => import("../routes/DetailPage.vue"),

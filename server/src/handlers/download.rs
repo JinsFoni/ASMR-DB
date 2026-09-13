@@ -129,11 +129,17 @@ fn run_download(
     url: &str,
     download_dir: &PathBuf,
 ) -> Result<(), String> {
-    let client = reqwest::blocking::Client::builder()
+    let proxy = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        crate::api::proxy::ProxyConfig::from_conn(&conn)
+    };
+    let builder = reqwest::blocking::Client::builder()
         .user_agent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
         )
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(60));
+    let client = proxy
+        .apply_blocking(builder, crate::api::proxy::ProxyTarget::Dlsite)
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -452,9 +458,15 @@ fn run_asmrone_download(
     token: &str,
     cancel: &Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), String> {
-    let client = reqwest::blocking::Client::builder()
+    let proxy = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        crate::api::proxy::ProxyConfig::from_conn(&conn)
+    };
+    let builder = reqwest::blocking::Client::builder()
         .user_agent(crate::api::asmrone::USER_AGENT)
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(120));
+    let client = proxy
+        .apply_blocking(builder, crate::api::proxy::ProxyTarget::AsmrOne)
         .build()
         .map_err(|e| e.to_string())?;
 

@@ -13,6 +13,10 @@ const title = computed(() => {
   switch (route.name) {
     case "home":
       return "📚 作品库";
+    case "dlsite":
+      return "🏆 DLsite 榜单";
+    case "dlsite-work-detail":
+      return "🔗 在线作品预览";
     case "import":
       return "➕ 导入作品";
     case "downloads":

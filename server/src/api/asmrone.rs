@@ -7,6 +7,7 @@
 //! 所有请求带浏览器 UA 和完整请求头，尽量绕过基础反爬。若仍被拦截，返回明确错误。
 
 use crate::db::models::ScrapedWork;
+use crate::api::proxy::{ProxyConfig, ProxyTarget};
 use crate::api::scraper::{guess_work_type, parse_file_size};
 use scraper::{Html, Selector};
 use std::error::Error;
@@ -17,17 +18,17 @@ pub const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 const API_BASE: &str = "https://api.asmr-200.com/api";
 const WEB_BASE: &str = "https://www.asmr.one/work";
 
-fn build_client() -> Result<reqwest::blocking::Client, Box<dyn Error>> {
+fn build_client(proxy: &ProxyConfig) -> Result<reqwest::blocking::Client, Box<dyn Error>> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(reqwest::header::USER_AGENT, USER_AGENT.parse()?);
     headers.insert(reqwest::header::ACCEPT, "text/html,application/json,application/xhtml+xml,*/*;q=0.8".parse()?);
     headers.insert(reqwest::header::ACCEPT_LANGUAGE, "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7".parse()?);
     headers.insert(reqwest::header::REFERER, "https://www.asmr.one/".parse()?);
-    Ok(reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .default_headers(headers)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?)
+        .timeout(std::time::Duration::from_secs(30));
+    Ok(proxy.apply_blocking(builder, ProxyTarget::AsmrOne).build()?)
 }
 
 fn dlsite_url(rj: &str) -> String {
@@ -42,9 +43,10 @@ fn dlsite_url(rj: &str) -> String {
 pub fn fetch_work_from_asmrone(
     rj_code: &str,
     token: Option<&str>,
+    proxy: &ProxyConfig,
 ) -> Result<ScrapedWork, Box<dyn Error>> {
     let rj = rj_code.trim().to_uppercase();
-    let client = build_client()?;
+    let client = build_client(proxy)?;
 
     // 1) 带 token 的 API（登录态）
     if let Some(t) = token.filter(|t| !t.trim().is_empty()) {
@@ -175,13 +177,14 @@ fn build_tree_node(v: &serde_json::Value) -> AsmrTreeNode {
 pub fn fetch_file_tree(
     rj_code: &str,
     token: Option<&str>,
+    proxy: &ProxyConfig,
 ) -> Result<Vec<AsmrTreeNode>, String> {
     let rj = rj_code.trim().to_uppercase();
     let work_id: u64 = rj
         .trim_start_matches("RJ")
         .parse()
         .map_err(|_| format!("无效的 RJ 号: {rj}"))?;
-    let client = build_client().map_err(|e| e.to_string())?;
+    let client = build_client(proxy).map_err(|e| e.to_string())?;
     let url = format!("https://api.asmr-100.com/api/tracks/{}", work_id);
     let mut req = client.get(&url);
     if let Some(t) = token.filter(|t| !t.trim().is_empty()) {
@@ -204,13 +207,14 @@ pub fn fetch_file_tree(
 pub fn fetch_audio_files(
     rj_code: &str,
     token: Option<&str>,
+    proxy: &ProxyConfig,
 ) -> Result<Vec<AsmrFile>, String> {
     let rj = rj_code.trim().to_uppercase();
     let work_id: u64 = rj
         .trim_start_matches("RJ")
         .parse()
         .map_err(|_| format!("无效的 RJ 号: {rj}"))?;
-    let client = build_client().map_err(|e| e.to_string())?;
+    let client = build_client(proxy).map_err(|e| e.to_string())?;
     let url = format!("https://api.asmr-100.com/api/tracks/{}", work_id);
     let mut req = client.get(&url);
     if let Some(t) = token.filter(|t| !t.trim().is_empty()) {

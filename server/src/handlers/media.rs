@@ -113,21 +113,26 @@ pub async fn asmr_file(
         return (StatusCode::BAD_REQUEST, "bad file hash").into_response();
     }
 
-    // 从 DB 读 asmr.one token
-    let token = {
+    // 从 DB 读 asmr.one token 与代理配置
+    let (token, proxy) = {
         let conn = state.db.lock().map_err(AppError::new);
         match conn {
-            Ok(c) => queries::get_setting(&c, "asmr_one_token")
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
-            Err(_) => String::new(),
+            Ok(c) => (
+                queries::get_setting(&c, "asmr_one_token")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+                crate::api::proxy::ProxyConfig::from_conn(&c),
+            ),
+            Err(_) => (String::new(), Default::default()),
         }
     };
 
-    let client = match reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .user_agent(crate::api::asmrone::USER_AGENT)
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(60));
+    let client = match proxy
+        .apply_async(builder, crate::api::proxy::ProxyTarget::AsmrOne)
         .build()
     {
         Ok(c) => c,

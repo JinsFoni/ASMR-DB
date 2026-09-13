@@ -8,6 +8,7 @@ import {
   Plus,
   Headphones,
   Trash2,
+  Trophy,
 } from "lucide-vue-next";
 import { useWorksStore } from "../../stores/works";
 import * as api from "../../lib/api";
@@ -95,6 +96,14 @@ function onStatusClick(status: string) {
     </div>
 
     <nav class="flex-1 px-2 space-y-0.5 overflow-y-auto">
+      <RouterLink
+        to="/dlsite"
+        class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors"
+        :class="route.path.startsWith('/dlsite') ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
+      >
+        <Trophy :size="16" /> DLsite
+      </RouterLink>
+
       <RouterLink
         to="/"
         class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors"

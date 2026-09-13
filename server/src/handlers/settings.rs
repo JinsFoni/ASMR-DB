@@ -18,6 +18,12 @@ pub struct SettingsResponse {
     pub download_dir: Option<String>,
     pub theme: String,
     pub asmr_one_token: Option<String>,
+    /// 出站代理地址（如 http://127.0.0.1:8502），空 = 未配置
+    pub proxy_url: Option<String>,
+    /// DLsite 请求是否走代理
+    pub proxy_dlsite: bool,
+    /// asmr.one 请求是否走代理
+    pub proxy_asmrone: bool,
 }
 
 pub async fn get_settings(
@@ -34,6 +40,15 @@ pub async fn get_settings(
             asmr_one_token: queries::get_setting(&conn, "asmr_one_token")
                 .ok()
                 .flatten(),
+            proxy_url: queries::get_setting(&conn, "proxy_url").ok().flatten(),
+            proxy_dlsite: queries::get_setting(&conn, "proxy_dlsite")
+                .ok()
+                .flatten()
+                .is_some_and(|v| v == "1"),
+            proxy_asmrone: queries::get_setting(&conn, "proxy_asmrone")
+                .ok()
+                .flatten()
+                .is_some_and(|v| v == "1"),
         })
     })
     .await
@@ -46,6 +61,9 @@ pub async fn get_settings(
 pub struct SetSettingsBody {
     pub theme: Option<String>,
     pub download_dir: Option<String>,
+    pub proxy_url: Option<String>,
+    pub proxy_dlsite: Option<bool>,
+    pub proxy_asmrone: Option<bool>,
 }
 
 pub async fn set_settings(
@@ -59,6 +77,17 @@ pub async fn set_settings(
         }
         if let Some(d) = body.download_dir {
             queries::set_setting(&conn, "download_dir", &d).map_err(AppError::new)?;
+        }
+        if let Some(u) = body.proxy_url {
+            queries::set_setting(&conn, "proxy_url", u.trim()).map_err(AppError::new)?;
+        }
+        if let Some(b) = body.proxy_dlsite {
+            queries::set_setting(&conn, "proxy_dlsite", if b { "1" } else { "0" })
+                .map_err(AppError::new)?;
+        }
+        if let Some(b) = body.proxy_asmrone {
+            queries::set_setting(&conn, "proxy_asmrone", if b { "1" } else { "0" })
+                .map_err(AppError::new)?;
         }
         Ok(())
     })
@@ -432,21 +461,25 @@ pub async fn fetch_subtitle(
     State(state): State<SharedState>,
     axum::extract::Query(q): axum::extract::Query<SubtitleFetchQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let token = {
+    let (token, proxy) = {
         let conn = state.db.lock().map_err(AppError::new)?;
-        queries::get_setting(&conn, "asmr_one_token")
-            .ok()
-            .flatten()
-            .unwrap_or_default()
+        (
+            queries::get_setting(&conn, "asmr_one_token")
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+            crate::api::proxy::ProxyConfig::from_conn(&conn),
+        )
     };
     let url = q.url;
-    let content = tokio::task::spawn_blocking(move || fetch_subtitle_impl(&url, &token).map_err(AppError::new))
-        .await
-        .map_err(AppError::new)??;
+    let content =
+        tokio::task::spawn_blocking(move || fetch_subtitle_impl(&url, &token, &proxy).map_err(AppError::new))
+            .await
+            .map_err(AppError::new)??;
     Ok(Json(json!({ "content": content })))
 }
 
-fn fetch_subtitle_impl(url: &str, token: &str) -> Result<String, String> {
+fn fetch_subtitle_impl(url: &str, token: &str, proxy: &crate::api::proxy::ProxyConfig) -> Result<String, String> {
     let url_trimmed = url.trim();
     if url_trimmed.is_empty() {
         return Ok(String::new());
@@ -479,17 +512,24 @@ fn fetch_subtitle_impl(url: &str, token: &str) -> Result<String, String> {
         url_trimmed.to_string()
     };
 
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .user_agent(crate::api::asmrone::USER_AGENT)
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(30));
+    // asmr.one 相关域名按 asmr.one 的开关走代理，其余 URL 不走代理
+    let is_asmr = target_url.contains("asmr-100.com")
+        || target_url.contains("asmr-200.com")
+        || target_url.contains("asmr.one");
+    let builder = if is_asmr {
+        proxy.apply_blocking(builder, crate::api::proxy::ProxyTarget::AsmrOne)
+    } else {
+        builder
+    };
+    let client = builder
         .build()
         .map_err(|e| format!("构建请求客户端失败: {e}"))?;
 
     let mut req = client.get(&target_url);
-    if target_url.contains("asmr-100.com")
-        || target_url.contains("asmr-200.com")
-        || target_url.contains("asmr.one")
-    {
+    if is_asmr {
         if !token.trim().is_empty() {
             req = req.header("Authorization", format!("Bearer {}", token.trim()));
         }

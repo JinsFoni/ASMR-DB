@@ -1,4 +1,5 @@
 use crate::db::models::ScrapedWork;
+use crate::api::proxy::{ProxyConfig, ProxyTarget};
 use scraper::{Html, Selector};
 use std::error::Error;
 
@@ -12,13 +13,13 @@ pub fn product_url(rj_code: &str) -> String {
 }
 
 /// Fetch and parse metadata for a work given its RJ code.
-pub fn fetch_work_metadata(rj_code: &str) -> Result<ScrapedWork, Box<dyn Error>> {
+pub fn fetch_work_metadata(rj_code: &str, proxy: &ProxyConfig) -> Result<ScrapedWork, Box<dyn Error>> {
     let rj = rj_code.trim().to_uppercase();
-    let client = reqwest::blocking::Client::builder()
+    let builder = reqwest::blocking::Client::builder()
         .user_agent(USER_AGENT)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
+        .timeout(std::time::Duration::from_secs(30));
+    let client = proxy.apply_blocking(builder, ProxyTarget::Dlsite).build()?;
 
     let url = product_url(&rj);
     let resp = client.get(&url).send()?;
@@ -135,8 +136,9 @@ fn find_circle(doc: &Html) -> Option<Circle> {
 
 /// Scan the product info table for labelled rows.
 fn parse_info_table(doc: &Html, w: &mut ScrapedWork) {
-    // Typical structure: <tr><th>販売日</th><td>...</td></tr>
-    let Some(th_sel) = Selector::parse("#work_outline table tr th, .work_outline tr th, table.work_table tr th").ok() else {
+    // 注意：现代页面 `<table id="work_outline">` 本身即表格（tr 直接在其下，
+    // 中间没有再嵌套 table），因此 th 直接在 tr 内查找即可。
+    let Some(th_sel) = Selector::parse("th").ok() else {
         return;
     };
     let Some(tr_sel) = Selector::parse("#work_outline tr, .work_outline tr").ok() else {
@@ -197,7 +199,7 @@ fn parse_info_table(doc: &Html, w: &mut ScrapedWork) {
     }
 }
 
-fn extract_date(s: &str) -> Option<String> {
+pub(crate) fn extract_date(s: &str) -> Option<String> {
     // YYYY年MM月DD日 (注意 年/月/日 是多字节字符，用字符边界偏移)
     if let Some(i) = s.find('年') {
         if let Some(j) = s.find('月') {
@@ -295,6 +297,17 @@ fn parse_duration_from_text(s: &str) -> Option<i64> {
 }
 
 fn find_price(doc: &Html) -> Option<i64> {
+    // 现代页面价格由 Vue 渲染（静态 HTML 无价格文本），
+    // 优先取隐藏 GA4 埋点元素上的 data-price（当前折扣价）。
+    if let Ok(sel) = Selector::parse("div[data-price]") {
+        for e in doc.select(&sel) {
+            if let Some(v) = e.value().attr("data-price") {
+                if let Ok(p) = v.trim().parse::<i64>() {
+                    return Some(p);
+                }
+            }
+        }
+    }
     let price_sel = Selector::parse(
         ".work_price, .buy_price, #price_box .price, span[itemprop='price'], .price-whole",
     )
@@ -376,6 +389,43 @@ mod tests {
     </body>
     </html>
     "#;
+
+    /// 真实页面结构：`<table id="work_outline">` 本身即表格（tr 直接在其下），
+    /// 价格由 Vue 渲染，仅 GA4 埋点元素上有 data-price。
+    const SAMPLE_HTML_V2: &str = r##"
+    <html>
+    <head><title>【15%OFF】テスト作品 [サークルX] | DLsite 同人 - R18</title></head>
+    <body>
+      <div data-vue-component="product-price" data-section_name="right_work_price">
+        <div hidden class="ga4_event_item_RJ01690344" data-product_id="RJ01690344"
+             data-price="1309" data-official_price="1540"></div>
+        <div id="work_price"></div>
+      </div>
+      <table cellspacing="0" id="work_outline">
+        <tr><th>販売日</th><td><a href="#">2026年09月11日 0時</a></td></tr>
+        <tr><th>声優</th><td><a href="#">都みみち</a> / <a href="#">ありのりあ</a></td></tr>
+        <tr><th>年齢指定</th><td><div class="work_genre"><span class="icon_ADL" title="R18">R18</span></div></td></tr>
+        <tr><th>作品形式</th><td><div class="work_genre"><span title="ボイス・ASMR">ボイス・ASMR</span></div></td></tr>
+        <tr><th>ジャンル</th><td><div class="main_genre"><a href="#">主観</a> <a href="#">耳かき</a></div></td></tr>
+      </table>
+    </body>
+    </html>
+    "##;
+
+    #[test]
+    fn parse_real_page_structure() {
+        let doc = Html::parse_document(SAMPLE_HTML_V2);
+        let mut w = ScrapedWork {
+            rj_code: "RJ01690344".into(),
+            ..Default::default()
+        };
+        parse_info_table(&doc, &mut w);
+        assert_eq!(w.sale_date.as_deref(), Some("2026-09-11"));
+        assert_eq!(w.age_class.as_deref(), Some("r18"));
+        assert!(w.actors.iter().any(|a| a.contains("都みみち")));
+        assert!(w.tags.iter().any(|t| t.contains("耳かき")));
+        assert_eq!(find_price(&doc), Some(1309), "应从 GA4 data-price 取到折扣价");
+    }
 
     #[test]
     fn parse_sample_page() {

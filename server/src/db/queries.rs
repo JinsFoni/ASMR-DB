@@ -642,6 +642,122 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusq
     Ok(())
 }
 
+// ============================= DLsite 排行榜 =============================
+
+/// 用新抓取的数据全量替换某个榜单周期的条目（fetched_at 重置为当前时间）。
+/// position 为抓取顺序号（1..N，主键）；rank 为 DLsite 展示名次，允许并列。
+pub fn replace_rankings(
+    conn: &Connection,
+    term: &str,
+    entries: &[RankingEntry],
+) -> Result<(), rusqlite::Error> {
+    conn.execute("DELETE FROM dlsite_rankings WHERE term = ?1", params![term])?;
+    let mut stmt = conn.prepare(
+        "INSERT INTO dlsite_rankings
+            (term, position, rank, rj_code, title, circle_name, cover_url, price, sale_date, dl_count, rating, tags_json)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+    )?;
+    for (idx, e) in entries.iter().enumerate() {
+        let tags_json = serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".into());
+        stmt.execute(params![
+            term,
+            (idx + 1) as i64,
+            e.rank,
+            e.rj_code,
+            e.title,
+            e.circle_name,
+            e.cover_url,
+            e.price,
+            e.sale_date,
+            e.dl_count,
+            e.rating,
+            tags_json,
+        ])?;
+    }
+    Ok(())
+}
+
+/// 读取榜单前 limit 条，LEFT JOIN works 带出本地入库状态（work_id / download_status）。
+pub fn list_rankings(
+    conn: &Connection,
+    term: &str,
+    limit: i64,
+) -> Result<Vec<DlsiteRankingItem>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        r#"SELECT r.rank, r.rj_code, r.title, r.circle_name, r.cover_url, r.price, r.sale_date,
+                  r.dl_count, r.rating, r.tags_json, r.fetched_at, w.id,
+                  (SELECT MAX(CASE WHEN lf.download_status = 'downloaded' THEN 2
+                                   WHEN lf.download_status = 'downloading' THEN 1
+                                   ELSE 0 END)
+                   FROM local_files lf WHERE lf.work_id = w.id) AS st
+           FROM dlsite_rankings r
+           LEFT JOIN works w ON w.rj_code = r.rj_code
+           WHERE r.term = ?1
+           ORDER BY r.position
+           LIMIT ?2"#,
+    )?;
+    let rows = stmt.query_map(params![term, limit], |row| {
+        let tags_json: Option<String> = row.get(9)?;
+        let work_id: Option<i64> = row.get(11)?;
+        let st: Option<i64> = row.get(12)?;
+        let download_status = work_id.map(|_| match st.unwrap_or(0) {
+            2 => "downloaded",
+            1 => "downloading",
+            _ => "not_downloaded",
+        });
+        Ok(DlsiteRankingItem {
+            rank: row.get(0)?,
+            rj_code: row.get(1)?,
+            title: row.get(2)?,
+            circle_name: row.get(3)?,
+            cover_url: row.get(4)?,
+            price: row.get(5)?,
+            sale_date: row.get(6)?,
+            dl_count: row.get(7)?,
+            rating: row.get(8)?,
+            tags: tags_json
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default(),
+            work_id,
+            download_status: download_status.map(String::from),
+            fetched_at: row.get(10)?,
+        })
+    })?;
+    rows.collect()
+}
+
+/// 榜单最近一次抓取时间（SQLite UTC 时间字符串）。
+pub fn ranking_last_fetch(
+    conn: &Connection,
+    term: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT MAX(fetched_at) FROM dlsite_rankings WHERE term = ?1",
+        params![term],
+        |r| r.get(0),
+    )
+}
+
+/// 判断是否需要刷新：任一周期没有数据或数据早于 max_age_hours 小时前 → true。
+pub fn rankings_stale(
+    conn: &Connection,
+    terms: &[&str],
+    max_age_hours: i64,
+) -> Result<bool, rusqlite::Error> {
+    for term in terms {
+        let fresh: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM dlsite_rankings
+             WHERE term = ?1 AND fetched_at >= datetime('now', ?2)",
+            params![term, format!("-{max_age_hours} hours")],
+            |r| r.get(0),
+        )?;
+        if fresh == 0 {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -684,6 +800,13 @@ mod tests {
             CREATE TABLE work_groups (work_id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL,
                 FOREIGN KEY (work_id) REFERENCES works(id) ON DELETE CASCADE,
                 FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE);
+            CREATE TABLE dlsite_rankings (
+                term TEXT NOT NULL, position INTEGER NOT NULL, rank INTEGER NOT NULL,
+                rj_code TEXT NOT NULL, title TEXT, circle_name TEXT, cover_url TEXT,
+                price INTEGER, sale_date TEXT, dl_count INTEGER, rating REAL, tags_json TEXT,
+                fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (term, position)
+            );
             CREATE VIRTUAL TABLE works_fts USING fts5(rj_code, title_ja, title_zh, title_en, circle_name, description);
             "#,
         )
@@ -773,5 +896,57 @@ mod tests {
         // w2 无分组
         let w2_view = all.iter().find(|v| v.work.id == w2).unwrap();
         assert!(w2_view.group.is_none());
+    }
+
+    fn ranking_entry(rank: i64, rj: &str) -> RankingEntry {
+        RankingEntry {
+            rank,
+            rj_code: rj.into(),
+            title: Some("测试作品".into()),
+            circle_name: Some("测试社团".into()),
+            cover_url: None,
+            price: Some(1320),
+            sale_date: Some("2026-01-01".into()),
+            dl_count: Some(100),
+            rating: Some(4.5),
+            tags: vec!["耳かき".into()],
+        }
+    }
+
+    #[test]
+    fn test_rankings_replace_and_library_join() {
+        let conn = test_conn();
+        let wid = insert_work(&conn, "RJ000001");
+        conn.execute(
+            "INSERT INTO local_files (work_id, local_path, download_status) VALUES (?1, '/tmp/x', 'downloaded')",
+            params![wid],
+        )
+        .unwrap();
+
+        // RJ000001 已入库且已下载；RJ000002 / RJ000003 未入库，RJ000002 与 RJ000003 并列第 2
+        let entries = vec![
+            ranking_entry(1, "RJ000001"),
+            ranking_entry(2, "RJ000002"),
+            ranking_entry(2, "RJ000003"),
+        ];
+        replace_rankings(&conn, "day", &entries).unwrap();
+
+        let items = list_rankings(&conn, "day", 20).unwrap();
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].work_id, Some(wid));
+        assert_eq!(items[0].download_status.as_deref(), Some("downloaded"));
+        assert_eq!(items[1].work_id, None);
+        assert_eq!(items[1].download_status, None);
+        assert_eq!(items[2].rank, 2, "并列名次应保留");
+        assert_eq!(items[0].tags, vec!["耳かき".to_string()]);
+
+        // limit 生效 + 全量替换不残留旧行
+        assert_eq!(list_rankings(&conn, "day", 2).unwrap().len(), 2);
+        replace_rankings(&conn, "day", &entries[..1]).unwrap();
+        assert_eq!(list_rankings(&conn, "day", 20).unwrap().len(), 1);
+
+        // 过期检查：刚写入的 day 不需要刷新，week 无数据需要刷新
+        assert!(!rankings_stale(&conn, &["day"], 4).unwrap());
+        assert!(rankings_stale(&conn, &["day", "week"], 4).unwrap());
     }
 }

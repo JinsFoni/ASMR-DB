@@ -121,6 +121,29 @@ export interface ScannedItem {
   groupName: string | null;
 }
 
+export interface DlsiteRankingItem {
+  rank: number;
+  rj_code: string;
+  title: string | null;
+  circle_name: string | null;
+  cover_url: string | null;
+  price: number | null;
+  sale_date: string | null;
+  dl_count: number | null;
+  rating: number | null;
+  tags: string[];
+  /** 已入库作品的本地 id；未入库为 null */
+  work_id: number | null;
+  /** 已入库时的下载状态；未入库为 null */
+  download_status: string | null;
+  fetched_at: string | null;
+}
+
+export interface DlsiteRankingResponse {
+  items: DlsiteRankingItem[];
+  lastFetched: string | null;
+}
+
 export interface WorkListResponse {
   items: WorkView[];
   total: number;

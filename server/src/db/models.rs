@@ -129,6 +129,41 @@ pub struct ScrapedWork {
     pub tags: Vec<String>,
 }
 
+/// DLsite 排行榜单条（抓取结果，入库前）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RankingEntry {
+    pub rank: i64,
+    pub rj_code: String,
+    pub title: Option<String>,
+    pub circle_name: Option<String>,
+    pub cover_url: Option<String>,
+    pub price: Option<i64>,
+    pub sale_date: Option<String>,
+    pub dl_count: Option<i64>,
+    pub rating: Option<f64>,
+    pub tags: Vec<String>,
+}
+
+/// DLsite 排行榜条目 + 本地作品关联（榜单卡片用）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DlsiteRankingItem {
+    pub rank: i64,
+    pub rj_code: String,
+    pub title: Option<String>,
+    pub circle_name: Option<String>,
+    pub cover_url: Option<String>,
+    pub price: Option<i64>,
+    pub sale_date: Option<String>,
+    pub dl_count: Option<i64>,
+    pub rating: Option<f64>,
+    pub tags: Vec<String>,
+    /// 已入库作品的本地 id；未入库为 None
+    pub work_id: Option<i64>,
+    /// 已入库时的下载状态；未入库为 None
+    pub download_status: Option<String>,
+    pub fetched_at: Option<String>,
+}
+
 /// 下载任务（前端下载队列展示用）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DownloadTask {

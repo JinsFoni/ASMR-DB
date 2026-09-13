@@ -158,11 +158,34 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             value           TEXT
         );
 
+        -- ==================== DLsite 排行榜快照表 ====================
+        -- 每个榜单周期（day/week/month/year/total）各存 Top 100，
+        -- 定时任务每 4 小时全量替换，fetched_at 为该行抓取时间。
+        -- position 为榜单内序号（主键，保证唯一）；rank 为 DLsite 展示名次，
+        -- DLsite 榜单存在并列名次（如三作品并列第 76），不可作唯一键。
+        CREATE TABLE IF NOT EXISTS dlsite_rankings (
+            term        TEXT    NOT NULL,
+            position    INTEGER NOT NULL,
+            rank        INTEGER NOT NULL,
+            rj_code     TEXT    NOT NULL,
+            title       TEXT,
+            circle_name TEXT,
+            cover_url   TEXT,
+            price       INTEGER,
+            sale_date   TEXT,
+            dl_count    INTEGER,
+            rating      REAL,
+            tags_json   TEXT,
+            fetched_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (term, position)
+        );
+
         -- ==================== 索引 ====================
         CREATE INDEX IF NOT EXISTS idx_works_rj ON works(rj_code);
         CREATE INDEX IF NOT EXISTS idx_works_circle ON works(circle_name);
         CREATE INDEX IF NOT EXISTS idx_works_type ON works(work_type);
         CREATE INDEX IF NOT EXISTS idx_audio_work ON audio_tracks(work_id);
+        CREATE INDEX IF NOT EXISTS idx_dlsite_rankings_rj ON dlsite_rankings(rj_code);
         CREATE INDEX IF NOT EXISTS idx_play_history_work ON play_history(work_id);
         CREATE INDEX IF NOT EXISTS idx_play_history_played ON play_history(last_played_at);
 

@@ -93,6 +93,41 @@ async fn main() {
         db_path,
     });
 
+    // ============ DLsite 榜单定时任务 ============
+    // 启动时若榜单数据为空或早于 4 小时则立即刷新，之后每 4 小时轮询一次。
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            loop {
+                let stale = tokio::task::spawn_blocking({
+                    let state = state.clone();
+                    move || match state.db.lock() {
+                        Ok(conn) => db::queries::rankings_stale(
+                            &conn,
+                            &api::ranking::RANKING_TERMS,
+                            4,
+                        )
+                        .unwrap_or(true),
+                        Err(_) => true,
+                    }
+                })
+                .await
+                .unwrap_or(true);
+
+                if stale {
+                    let terms: Vec<String> = api::ranking::RANKING_TERMS
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                    if let Err(e) = handlers::dlsite::do_refresh(state.clone(), terms).await {
+                        eprintln!("⚠️ DLsite 榜单定时刷新失败: {e}");
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(4 * 3600)).await;
+            }
+        });
+    }
+
     let static_service = ServeDir::new(&dist_dir)
         .append_index_html_on_directories(true)
         .not_found_service(ServeFile::new(dist_dir.join("index.html")));
@@ -151,6 +186,15 @@ async fn main() {
         .route(
             "/api/import/bind-folder",
             post(handlers::import::bind_local_folder),
+        )
+        // ============ DLsite 排行榜 ============
+        .route(
+            "/api/dlsite/ranking",
+            get(handlers::dlsite::get_ranking),
+        )
+        .route(
+            "/api/dlsite/ranking/refresh",
+            post(handlers::dlsite::refresh_ranking),
         )
         // ============ asmr.one ============
         .route("/api/asmr/tracks", get(handlers::works::list_asmrone_tracks))
