@@ -236,7 +236,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    println!("🎧 DLsite ASMR Manager 服务已启动: http://localhost:{port}");
+    println!("🎧 ASMR DB 服务已启动: http://localhost:{port}");
 
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("服务运行错误: {e}");

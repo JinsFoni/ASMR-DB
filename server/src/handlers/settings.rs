@@ -177,7 +177,7 @@ pub async fn import_database(
                 .map_err(|e| AppError(format!("数据库格式异常: {e}")))?;
             if !has_works {
                 return Err(AppError(
-                    "该文件不是有效的 DLsite ASMR Manager 数据库（缺少 works 表）".to_string(),
+                    "该文件不是有效的 ASMR DB 数据库（缺少 works 表）".to_string(),
                 ));
             }
         }

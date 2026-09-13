@@ -31,6 +31,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "asmr-db"
+version = "2.1.0"
+dependencies = [
+ "axum",
+ "dirs",
+ "encoding_rs",
+ "futures",
+ "mime_guess",
+ "reqwest",
+ "rusqlite",
+ "scraper",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "zip",
+]
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -257,27 +278,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.5",
-]
-
-[[package]]
-name = "dlsite-asmr-manager"
-version = "2.1.0"
-dependencies = [
- "axum",
- "dirs",
- "encoding_rs",
- "futures",
- "mime_guess",
- "reqwest",
- "rusqlite",
- "scraper",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "zip",
 ]
 
 [[package]]

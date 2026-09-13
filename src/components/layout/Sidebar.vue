@@ -89,7 +89,7 @@ function onStatusClick(status: string) {
         <Headphones :size="18" />
       </div>
       <div>
-        <div class="text-sm font-semibold text-white leading-tight">DLsite Manager</div>
+        <div class="text-sm font-semibold text-white leading-tight">ASMR DB</div>
         <div class="text-[10px] text-muted">ASMR 作品管理</div>
       </div>
     </div>
@@ -202,7 +202,7 @@ function onStatusClick(status: string) {
     </nav>
 
     <div class="px-4 py-3 border-t border-bg-border text-[10px] text-muted/60">
-      v{{ APP_VERSION }} · 小玥喵 🐱
+      v{{ APP_VERSION }} · Bunny 🐰
     </div>
   </aside>
 </template>

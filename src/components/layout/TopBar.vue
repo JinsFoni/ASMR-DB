@@ -22,7 +22,7 @@ const title = computed(() => {
     case "work-detail":
       return "📄 作品详情";
     default:
-      return "DLsite Manager";
+      return "ASMR DB";
   }
 });
 

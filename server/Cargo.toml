@@ -1,8 +1,8 @@
 [package]
-name = "dlsite-asmr-manager"
+name = "asmr-db"
 version = "2.1.0"
-description = "DLsite ASMR 作品管理 Web 服务端"
-authors = ["XiaoYueMiao"]
+description = "ASMR DB 作品管理 Web 服务端"
+authors = ["Bunny"]
 edition = "2021"
 
 [dependencies]
