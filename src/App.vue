@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
-import { listen } from "@tauri-apps/api/event";
 import Sidebar from "./components/layout/Sidebar.vue";
 import TopBar from "./components/layout/TopBar.vue";
 import MiniPlayer from "./components/layout/MiniPlayer.vue";
@@ -9,6 +8,7 @@ import { useWorksStore } from "./stores/works";
 import { useDownloadStore } from "./stores/download";
 import { usePlayerStore } from "./stores/player";
 import * as api from "./lib/api";
+import { onSubtitleClosed } from "./lib/desktopSubtitle";
 import { applyTheme, getStoredTheme } from "./lib/theme";
 
 const worksStore = useWorksStore();
@@ -20,6 +20,7 @@ const route = useRoute();
 applyTheme(getStoredTheme());
 
 let unlisten: (() => void) | null = null;
+let unlistenSubtitleClose: (() => void) | null = null;
 
 function onKeydown(e: KeyboardEvent) {
   const target = e.target as HTMLElement;
@@ -64,8 +65,8 @@ onMounted(async () => {
   unlisten = await api.onDownloadProgress((ev) => {
     downloadStore.handleProgress(ev);
   });
-  // 桌面字幕窗口点关闭 → 关闭悬浮字幕
-  listen<never>("desktop-subtitle:close", () => {
+  // 悬浮歌词弹窗点关闭 → 关闭悬浮字幕
+  unlistenSubtitleClose = onSubtitleClosed(() => {
     playerStore.disableDesktopSubtitle();
   });
   window.addEventListener("keydown", onKeydown);
@@ -73,6 +74,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   unlisten?.();
+  unlistenSubtitleClose?.();
 });
 
 onUnmounted(() => {

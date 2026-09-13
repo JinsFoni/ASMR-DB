@@ -5,9 +5,14 @@ node_modules
 dist
 dist-ssr
 
-# Tauri
-src-tauri/target
-src-tauri/gen/schemas
+# Rust server
+server/target
+
+# local data (dev)
+data
+*.db
+*.db-*
+*.db.bak
 
 # logs
 *.log
@@ -19,18 +24,12 @@ npm-debug.log*
 .idea
 .DS_Store
 
-# source icon
-src-tauri/icons-src/
-
 # --- added by setup ---
 .claude/
 .dbg/
 .env
 .env.*
 !.env.example
-*.db
-*.db-*
 *.exe
 *.msi
 dom_debug*.html
-src-tauri/target/

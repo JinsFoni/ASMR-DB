@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
-import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   Moon,
   Sun,
@@ -17,6 +16,7 @@ import {
   HardDriveUpload,
 } from "lucide-vue-next";
 import * as api from "../lib/api";
+import FolderPickerModal from "../components/common/FolderPickerModal.vue";
 import { useDownloadStore } from "../stores/download";
 import { applyTheme, type ThemeName } from "../lib/theme";
 
@@ -31,6 +31,10 @@ const asmrToken = ref("");
 const asmrSaved = ref(false);
 
 const hasAsmrToken = computed(() => asmrToken.value.trim().length > 0);
+
+// 目录选择器与数据库导入
+const showFolderPicker = ref(false);
+const importFileInput = ref<HTMLInputElement | null>(null);
 
 onMounted(async () => {
   const s = await api.getSettings();
@@ -73,31 +77,23 @@ async function clearAsmr() {
   asmrToken.value = "";
 }
 
-async function exportDb() {
-  const dest = await saveDialog({
-    title: "导出数据库备份",
-    defaultPath: "dlsite_manager_backup.db",
-    filters: [{ name: "SQLite 数据库", extensions: ["db"] }],
-  });
-  if (!dest) return;
-  try {
-    const msg = await api.exportDatabase(dest);
-    alert(msg);
-  } catch (e) {
-    alert(`导出失败：${e}`);
-  }
+/** 导出数据库备份：服务端生成快照，浏览器直接下载。 */
+function exportDb() {
+  api.exportDatabase();
 }
 
-async function importDb() {
-  const src = await open({
-    title: "选择要导入的数据库文件",
-    multiple: false,
-    filters: [{ name: "SQLite 数据库", extensions: ["db"] }],
-  });
-  if (!src || typeof src !== "string") return;
-  if (!confirm("导入将覆盖当前所有数据！\n（当前数据库会自动备份为 .db.bak）\n\n确定继续？")) return;
+function triggerImportDb() {
+  importFileInput.value?.click();
+}
+
+async function onImportFile(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  if (!confirm("导入将覆盖服务器上的当前所有数据！\n（当前数据库会自动备份为 .db.bak）\n\n确定继续？")) return;
   try {
-    const msg = await api.importDatabase(src);
+    const msg = await api.importDatabase(file);
     alert(msg);
     // 刷新界面数据
     dbPath.value = await api.getDbPath();
@@ -106,11 +102,12 @@ async function importDb() {
   }
 }
 
-async function pickDir() {
-  const dir = await open({ directory: true, multiple: false, title: "选择下载目录" });
-  if (dir && typeof dir === "string") {
-    downloadDir.value = dir;
-  }
+function pickDir() {
+  showFolderPicker.value = true;
+}
+
+function handleDirPicked(dir: string) {
+  downloadDir.value = dir;
 }
 </script>
 
@@ -235,7 +232,7 @@ async function pickDir() {
       </div>
       <div class="text-[11px] text-muted mt-2 flex items-start gap-1.5">
         <Info :size="12" class="mt-0.5 shrink-0" />
-        <span>数据库存放在软件同级目录下，备份只需复制该文件。也可使用下方导出 / 导入功能进行数据迁移。</span>
+        <span>数据库存放在服务端程序同级目录下，备份只需复制该文件。也可使用下方导出 / 导入功能进行数据迁移。</span>
       </div>
       <!-- 数据迁移 -->
       <div class="flex items-center gap-2 mt-3 pt-3 border-t border-bg-border">
@@ -243,9 +240,16 @@ async function pickDir() {
         <button class="btn-outline !text-xs flex items-center gap-1" @click="exportDb">
           <HardDriveDownload :size="13" /> 导出备份
         </button>
-        <button class="btn-outline !text-xs flex items-center gap-1 !border-amber-500/40 !text-amber-400 hover:!bg-amber-500/10" @click="importDb">
+        <button class="btn-outline !text-xs flex items-center gap-1 !border-amber-500/40 !text-amber-400 hover:!bg-amber-500/10" @click="triggerImportDb">
           <HardDriveUpload :size="13" /> 导入还原
         </button>
+        <input
+          ref="importFileInput"
+          type="file"
+          accept=".db,application/octet-stream"
+          class="hidden"
+          @change="onImportFile"
+        />
       </div>
     </section>
 
@@ -255,5 +259,13 @@ async function pickDir() {
       <Check v-else :size="15" />
       {{ saved ? "已保存" : "保存设置" }}
     </button>
+
+    <!-- 服务端目录选择器 Modal -->
+    <FolderPickerModal
+      :visible="showFolderPicker"
+      title="选择下载目录（服务器上的路径）"
+      @close="showFolderPicker = false"
+      @select="handleDirPicked"
+    />
   </div>
 </template>

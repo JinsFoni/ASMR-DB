@@ -74,6 +74,12 @@ function goWorksAndFilter() {
   }
   worksStore.applyFilter();
 }
+
+/** 状态筛选：与标签/分组一致，不在作品库时先跳回作品库再应用筛选。 */
+function onStatusClick(status: string) {
+  worksStore.status = status;
+  goWorksAndFilter();
+}
 </script>
 
 <template>
@@ -127,21 +133,21 @@ function goWorksAndFilter() {
       <button
         class="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors text-left"
         :class="worksStore.status === 'all' ? 'bg-bg-hover text-white' : 'text-muted hover:text-white hover:bg-bg-hover'"
-        @click="worksStore.status = 'all'; worksStore.applyFilter()"
+        @click="onStatusClick('all')"
       >
         <Library :size="15" /> 全部
       </button>
       <button
         class="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors text-left"
         :class="worksStore.status === 'downloaded' ? 'bg-bg-hover text-white' : 'text-muted hover:text-white hover:bg-bg-hover'"
-        @click="worksStore.status = 'downloaded'; worksStore.applyFilter()"
+        @click="onStatusClick('downloaded')"
       >
         <span class="w-2 h-2 rounded-full bg-green-400" /> 已下载
       </button>
       <button
         class="w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors text-left"
         :class="worksStore.status === 'not_downloaded' ? 'bg-bg-hover text-white' : 'text-muted hover:text-white hover:bg-bg-hover'"
-        @click="worksStore.status = 'not_downloaded'; worksStore.applyFilter()"
+        @click="onStatusClick('not_downloaded')"
       >
         <span class="w-2 h-2 rounded-full bg-accent" /> 未下载
       </button>

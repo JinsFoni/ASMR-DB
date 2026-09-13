@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { open as openShell } from "@tauri-apps/plugin-shell";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   ArrowLeft,
   Download,
@@ -24,6 +22,7 @@ import type { WorkView, Track, AsmrTreeNode, AsmrDownloadFile } from "../lib/typ
 import TrackList from "../components/detail/TrackList.vue";
 import TagEditor from "../components/detail/TagEditor.vue";
 import AsmrFileTree from "../components/AsmrFileTree.vue";
+import FolderPickerModal from "../components/common/FolderPickerModal.vue";
 import { usePlayerStore } from "../stores/player";
 import { useWorksStore } from "../stores/works";
 import { useDownloadStore } from "../stores/download";
@@ -132,10 +131,16 @@ async function scanTracks() {
   }
 }
 
+// 目录选择器（服务端目录浏览，替代桌面端原生选择框）
+const showFolderPicker = ref(false);
+
 async function bindLocal() {
   if (!view.value) return;
-  const dir = await openDialog({ directory: true, multiple: false, title: "选择该作品的本地文件夹" });
-  if (!dir || typeof dir !== "string") return;
+  showFolderPicker.value = true;
+}
+
+async function handleFolderPicked(dir: string) {
+  if (!view.value) return;
   try {
     const res = await api.bindLocalFolder(view.value.work.rj_code, dir);
     alert(`关联成功！扫描到 ${res.trackCount} 首音轨${res.groupName ? `，已自动分配分组「${res.groupName}」` : ""}`);
@@ -150,12 +155,12 @@ async function bindLocal() {
 async function openDlsite() {
   const w = view.value?.work;
   const url = w?.dlsite_url || (w?.rj_code ? `https://www.dlsite.com/maniax/work/=/product_id/${w.rj_code}.html` : null);
-  if (url) await openShell(url);
+  if (url) window.open(url, "_blank", "noopener");
 }
 
 async function openAsmrOne() {
   const rj = view.value?.work.rj_code;
-  if (rj) await openShell(`https://www.asmr.one/work/${rj}`);
+  if (rj) window.open(`https://www.asmr.one/work/${rj}`, "_blank", "noopener");
 }
 
 async function playOnline() {
@@ -371,6 +376,14 @@ function onTagsUpdated() {
       :rj-code="view.work.rj_code"
       @close="showFileTree = false"
       @download="handleAsmrDownload"
+    />
+
+    <!-- 服务端目录选择器 Modal -->
+    <FolderPickerModal
+      :visible="showFolderPicker"
+      title="选择该作品的本地文件夹（服务器上的目录）"
+      @close="showFolderPicker = false"
+      @select="handleFolderPicked"
     />
   </div>
 </template>

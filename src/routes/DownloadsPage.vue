@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from "vue";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   Download,
   Pause,
@@ -13,12 +12,14 @@ import {
 } from "lucide-vue-next";
 import { useDownloadStore } from "../stores/download";
 import * as api from "../lib/api";
+import FolderPickerModal from "../components/common/FolderPickerModal.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 
 const store = useDownloadStore();
 
 const editingDir = ref(false);
 const dirInput = ref("");
+const showFolderPicker = ref(false);
 
 const fmtBytes = (b: number) => {
   if (!b) return "0 B";
@@ -53,11 +54,8 @@ onMounted(async () => {
   await store.refresh();
 });
 
-async function pickDir() {
-  const dir = await open({ directory: true, multiple: false, title: "选择下载目录" });
-  if (dir && typeof dir === "string") {
-    dirInput.value = dir;
-  }
+function pickDir() {
+  showFolderPicker.value = true;
 }
 
 async function saveSettings() {
@@ -188,5 +186,13 @@ async function doCancel(rj: string) {
         </div>
       </div>
     </div>
+
+    <!-- 服务端目录选择器 Modal -->
+    <FolderPickerModal
+      :visible="showFolderPicker"
+      title="选择下载目录（服务器上的路径）"
+      @close="showFolderPicker = false"
+      @select="(dir) => (dirInput = dir)"
+    />
   </div>
 </template>

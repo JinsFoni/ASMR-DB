@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 
-// hash 模式在 Tauri 打包后也无需服务器 SPA fallback，避免子路由刷新白屏
+// hash 模式部署在任意静态目录/子路径下都无需服务器 SPA fallback
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -41,59 +41,5 @@ const router = createRouter({
     },
   ],
 });
-
-// #region debug-point B:router
-router.beforeEach((to, from) => {
-  fetch("http://127.0.0.1:7777/event", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "startup-blank-pages",
-      runId: "pre-fix",
-      hypothesisId: "B",
-      location: "src/router/index.ts",
-      msg: "[DEBUG] router.beforeEach",
-      data: { to: { path: to.path, name: to.name }, from: { path: from.path, name: from.name } },
-      ts: Date.now(),
-    }),
-  }).catch(() => {});
-});
-
-router.afterEach((to, from, failure) => {
-  fetch("http://127.0.0.1:7777/event", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "startup-blank-pages",
-      runId: "pre-fix",
-      hypothesisId: "B",
-      location: "src/router/index.ts",
-      msg: "[DEBUG] router.afterEach",
-      data: {
-        to: { path: to.path, name: to.name, matched: to.matched?.length },
-        from: { path: from.path, name: from.name },
-        failure: failure ? String(failure) : null,
-      },
-      ts: Date.now(),
-    }),
-  }).catch(() => {});
-});
-
-router.onError((err) => {
-  fetch("http://127.0.0.1:7777/event", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sessionId: "startup-blank-pages",
-      runId: "pre-fix",
-      hypothesisId: "B",
-      location: "src/router/index.ts",
-      msg: "[DEBUG] router.onError",
-      data: { error: String(err) },
-      ts: Date.now(),
-    }),
-  }).catch(() => {});
-});
-// #endregion
 
 export default router;

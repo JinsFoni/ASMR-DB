@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   Plus,
   FolderOpen,
@@ -13,6 +12,7 @@ import {
 } from "lucide-vue-next";
 import * as api from "../lib/api";
 import type { ScrapedWork, ScannedItem } from "../lib/types";
+import FolderPickerModal from "../components/common/FolderPickerModal.vue";
 import { useWorksStore } from "../stores/works";
 
 const router = useRouter();
@@ -39,17 +39,28 @@ const sources = [
   { value: "asmrone", label: "asmr.one", desc: "asmr.one 数据源" },
 ];
 
-async function pickRjLocalFolder() {
-  const dir = await open({ directory: true, multiple: false, title: "选择要关联的本地作品文件夹" });
-  if (!dir || typeof dir !== "string") return;
-  rjLocalFolder.value = dir;
-  // 提取父文件夹名作为智能分组
-  const parts = dir.replace(/\\/g, "/").split("/").filter(Boolean);
-  if (parts.length >= 2) {
-    const parent = parts[parts.length - 2];
-    if (!parent.toUpperCase().startsWith("RJ") && !parent.endsWith(":")) {
-      rjGroupName.value = parent;
+// 目录选择器（服务端目录浏览）：rj = RJ 导入时关联本地文件夹，scan = 扫描根目录
+const showFolderPicker = ref(false);
+const pickerMode = ref<"rj" | "scan">("scan");
+
+function pickRjLocalFolder() {
+  pickerMode.value = "rj";
+  showFolderPicker.value = true;
+}
+
+function handleFolderPicked(dir: string) {
+  if (pickerMode.value === "rj") {
+    rjLocalFolder.value = dir;
+    // 提取父文件夹名作为智能分组
+    const parts = dir.replace(/\\/g, "/").split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      const parent = parts[parts.length - 2];
+      if (!parent.toUpperCase().startsWith("RJ") && !parent.endsWith(":")) {
+        rjGroupName.value = parent;
+      }
     }
+  } else {
+    scanPickedDir(dir);
   }
 }
 
@@ -104,9 +115,7 @@ const scanDone = ref(false);
 const importingAll = ref(false);
 const smartGroup = ref(true); // 智能匹配分组（将上级分类文件夹设为分组）
 
-async function pickAndScan() {
-  const dir = await open({ directory: true, multiple: false, title: "选择要扫描的文件夹" });
-  if (!dir || typeof dir !== "string") return;
+async function scanPickedDir(dir: string) {
   scanning.value = true;
   scanItems.value = [];
   scanDone.value = false;
@@ -303,7 +312,7 @@ async function importAll() {
         扫描硬盘上已下载的 DLsite 作品文件夹（自动识别 RJ 号），识别出已导入的作品。
       </p>
 
-      <button class="btn-outline" :disabled="scanning" @click="pickAndScan">
+      <button class="btn-outline" :disabled="scanning" @click="pickerMode = 'scan'; showFolderPicker = true">
         <Loader2 v-if="scanning" :size="15" class="animate-spin" />
         <FolderOpen v-else :size="15" />
         {{ scanning ? "扫描中..." : "选择文件夹并扫描" }}
@@ -362,5 +371,13 @@ async function importAll() {
         </div>
       </div>
     </section>
+
+    <!-- 服务端目录选择器 Modal -->
+    <FolderPickerModal
+      :visible="showFolderPicker"
+      :title="pickerMode === 'rj' ? '选择要关联的本地作品文件夹（服务器上的目录）' : '选择要扫描的文件夹（服务器上的目录）'"
+      @close="showFolderPicker = false"
+      @select="handleFolderPicked"
+    />
   </div>
 </template>

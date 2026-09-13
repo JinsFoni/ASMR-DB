@@ -1,7 +1,6 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { Howl } from "howler";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Track, WorkView } from "../lib/types";
 import * as api from "../lib/api";
 import { detectAndParse, getActiveCue } from "../lib/subtitle";
@@ -74,7 +73,7 @@ export const usePlayerStore = defineStore("player", () => {
     if (!w || !howl) return;
     const track = currentTrack.value;
     // 在线播放（asmr.one）不写进度，避免 track_id 与本地音轨混淆
-    if (track?.file_path.startsWith("http")) return;
+    if (!track || api.isOnlineTrack(track.file_path)) return;
     api.savePlayProgress(w.work.id, track?.id ?? null, howl.seek() as number).catch(
       () => {}
     );
@@ -97,10 +96,10 @@ export const usePlayerStore = defineStore("player", () => {
     buffering.value = true;
     // 注意：不在这里重置 consecutiveErrors，否则 onloaderror 里跳下一首会重置计数，
     // 导致全部音轨加载失败时无限循环。改为在 onplay（真正开始播放）时重置。
-    // 在线 URL（asmr.one 自定义协议）直接用，本地路径才走 convertFileSrc
-    const src = track.file_path.startsWith("http")
+    // 在线 URL（asmr.one CDN / 服务端代理）直接用，本地路径走 /api/audio Range 流
+    const src = api.isOnlineTrack(track.file_path)
       ? track.file_path
-      : convertFileSrc(track.file_path);
+      : api.localAudioUrl(track.file_path);
     howl = new Howl({
       src: [src],
       html5: true,
@@ -228,7 +227,7 @@ export const usePlayerStore = defineStore("player", () => {
     const seq = ++subtitleReqSeq;
     subtitleLoading.value = true;
     try {
-      if (track.file_path.startsWith("http")) {
+      if (api.isOnlineTrack(track.file_path)) {
         // 在线试听模式（asmr.one）
         const subs = track.subtitles || [];
         if (!subs.length) {

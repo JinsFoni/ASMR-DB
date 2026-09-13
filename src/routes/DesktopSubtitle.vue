@@ -1,48 +1,37 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { emitTo } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { X } from "lucide-vue-next";
+import { emitSubtitleClosed } from "../lib/desktopSubtitle";
 
 const text = ref("");
-let unlisten: UnlistenFn | null = null;
+let channel: BroadcastChannel | null = null;
 
-onMounted(async () => {
-  unlisten = await listen<{ text: string }>("desktop-subtitle:text", (e) => {
-    text.value = e.payload.text;
-  });
+onMounted(() => {
+  channel = new BroadcastChannel("dlsite-asmr-subtitle");
+  channel.onmessage = (e) => {
+    if (e.data?.type === "text") text.value = e.data.text ?? "";
+  };
 });
 
 onBeforeUnmount(() => {
-  unlisten?.();
+  channel?.close();
+  channel = null;
 });
 
-/** 关闭窗口：直接关闭本窗口（最可靠），同时通知主窗口同步状态。 */
-async function close() {
-  emitTo("main", "desktop-subtitle:close").catch(() => {});
-  try {
-    await getCurrentWindow().close();
-  } catch {
-    // ignore
-  }
+/** 关闭窗口：通知主窗口同步状态，然后关闭本弹窗。 */
+function close() {
+  emitSubtitleClosed();
+  window.close();
 }
 </script>
 
 <template>
-  <div
-    class="h-screen w-screen flex items-center justify-center overflow-hidden relative"
-    data-tauri-drag-region
-  >
+  <div class="h-screen w-screen flex items-center justify-center overflow-hidden relative bg-black/80">
     <!-- 字幕文本 -->
     <p
       v-if="text"
       class="max-w-[85vw] px-6 py-3 rounded-2xl text-center text-white text-2xl md:text-3xl font-bold leading-relaxed whitespace-pre-line"
-      style="
-        background: rgba(0, 0, 0, 0.4);
-        backdrop-filter: blur(6px);
-        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
-      "
+      style="text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9)"
     >
       {{ text }}
     </p>
@@ -53,7 +42,7 @@ async function close() {
     <!-- 关闭按钮 -->
     <button
       class="absolute top-1 right-1 w-6 h-6 flex items-center justify-center rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-      title="关闭桌面字幕"
+      title="关闭悬浮歌词"
       @click.stop="close"
     >
       <X :size="14" />
