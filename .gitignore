@@ -1,0 +1,36 @@
+# dependencies
+node_modules
+
+# build output
+dist
+dist-ssr
+
+# Tauri
+src-tauri/target
+src-tauri/gen/schemas
+
+# logs
+*.log
+npm-debug.log*
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# source icon
+src-tauri/icons-src/
+
+# --- added by setup ---
+.claude/
+.dbg/
+.env
+.env.*
+!.env.example
+*.db
+*.db-*
+*.exe
+*.msi
+dom_debug*.html
+src-tauri/target/

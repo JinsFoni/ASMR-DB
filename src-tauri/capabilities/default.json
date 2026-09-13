@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window and floating desktop-subtitle window",
+  "windows": ["main", "desktop-subtitle"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "dialog:default",
+    "core:webview:allow-create-webview-window",
+    "core:event:allow-emit-to",
+    "core:window:allow-close",
+    "core:window:allow-title"
+  ]
+}
