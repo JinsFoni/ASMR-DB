@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
-import { Search, LayoutGrid, List, X, Trash2, CheckSquare } from "lucide-vue-next";
+import { Search, LayoutGrid, RectangleHorizontal, List, X, Trash2, CheckSquare } from "lucide-vue-next";
 import { useWorksStore } from "../../stores/works";
 
 const store = useWorksStore();
-const viewMode = defineModel<"grid" | "list">({ default: "grid" });
+const viewMode = defineModel<"grid" | "cover" | "list">({ default: "grid" });
 const keyword = ref("");
 
 const allSelected = computed(
@@ -69,6 +69,14 @@ const sorts = [
           @click="viewMode = 'grid'"
         >
           <LayoutGrid :size="15" />
+        </button>
+        <button
+          class="px-2.5 py-1.5 transition-colors"
+          :class="viewMode === 'cover' ? 'bg-accent/20 text-accent-light' : 'text-muted hover:text-white'"
+          title="横版封面"
+          @click="viewMode = 'cover'"
+        >
+          <RectangleHorizontal :size="15" />
         </button>
         <button
           class="px-2.5 py-1.5 transition-colors"

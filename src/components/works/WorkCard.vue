@@ -4,8 +4,16 @@ import { RouterLink } from "vue-router";
 import { Check, CheckCircle2, Download, Loader2, ImageOff } from "lucide-vue-next";
 import type { WorkView } from "../../lib/types";
 
-const props = defineProps<{ view: WorkView; selected?: boolean; selectMode?: boolean }>();
+const props = defineProps<{
+  view: WorkView;
+  selected?: boolean;
+  selectMode?: boolean;
+  /** poster: 3:4 竖版海报（默认，裁切）；cover: 完整横版封面（不裁切） */
+  variant?: "poster" | "cover";
+}>();
 const emit = defineEmits<{ (e: "toggle-select", id: number): void }>();
+
+const wide = computed(() => props.variant === "cover");
 
 /** 选择模式下点击卡片切换选中，而非跳转详情 */
 function onCardClick(e: MouseEvent) {
@@ -39,16 +47,24 @@ const circle = computed(() => props.view.work.circle_name || "");
     :class="selectMode ? 'cursor-pointer' : ''"
     @click="onCardClick"
   >
-    <!-- 封面 -->
-    <div class="relative aspect-[3/4] bg-bg-hover overflow-hidden">
+    <!-- 封面（海报模式高度由 WorksCover 注入的 --poster-img-h 控制，与横版卡片严格等高） -->
+    <div
+      class="relative bg-bg-hover overflow-hidden"
+      :class="wide ? '' : 'h-[var(--poster-img-h,251px)]'"
+    >
       <img
         v-if="view.work.cover_url"
         :src="view.work.cover_url"
         :alt="title"
         loading="lazy"
-        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        class="group-hover:scale-105 transition-transform duration-300"
+        :class="wide ? 'w-full h-auto' : 'w-full h-full object-cover'"
       />
-      <div v-else class="w-full h-full flex items-center justify-center text-muted/50">
+      <div
+        v-else
+        class="w-full flex items-center justify-center text-muted/50"
+        :class="wide ? 'aspect-[4/3]' : 'h-full'"
+      >
         <ImageOff :size="28" />
       </div>
 
@@ -71,8 +87,11 @@ const circle = computed(() => props.view.work.circle_name || "");
         {{ statusMeta.label }}
       </div>
 
-      <!-- 标签 -->
-      <div v-if="view.tags.length" class="absolute bottom-1.5 left-1.5 right-1.5 flex flex-wrap gap-1">
+      <!-- 标签（横版模式下移到信息区，避免遮挡封面） -->
+      <div
+        v-if="!wide && view.tags.length"
+        class="absolute bottom-1.5 left-1.5 right-1.5 flex flex-wrap gap-1"
+      >
         <span
           v-for="t in view.tags.slice(0, 3)"
           :key="t.id"
@@ -91,6 +110,21 @@ const circle = computed(() => props.view.work.circle_name || "");
       <div class="text-[10px] text-muted mt-1 ellipsis-1">
         <span class="font-mono">{{ view.work.rj_code }}</span>
         <span v-if="circle"> · {{ circle }}</span>
+      </div>
+      <div v-if="wide && view.tags.length" class="flex flex-wrap gap-1 mt-1.5">
+        <span
+          v-for="t in view.tags.slice(0, 4)"
+          :key="t.id"
+          class="px-1 py-0.5 rounded text-[9px] bg-bg-hover text-muted border border-bg-border"
+        >
+          {{ t.name }}
+        </span>
+      </div>
+      <!-- 海报模式：发售日期行（与横版标签行同构等高，保持两种卡片信息区高度一致） -->
+      <div v-else-if="!wide && view.work.sale_date" class="flex mt-1.5">
+        <span class="px-1 py-0.5 rounded text-[9px] bg-bg-hover text-muted border border-bg-border">
+          {{ view.work.sale_date.slice(0, 10) }} 发售
+        </span>
       </div>
       <div class="flex items-center gap-2 mt-1.5 text-[10px] text-muted">
         <span v-if="view.track_count > 0">{{ view.track_count }} 音轨</span>
