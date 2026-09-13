@@ -19,16 +19,21 @@ fn fetch_metadata(
     source: Option<&str>,
     token: Option<&str>,
     proxy: &ProxyConfig,
+    asmr_api_base: &str,
 ) -> Result<ScrapedWork, String> {
     match source {
         Some("asmrone") => {
-            crate::api::asmrone::fetch_work_from_asmrone(rj_code, token, proxy)
+            crate::api::asmrone::fetch_work_from_asmrone(rj_code, token, proxy, asmr_api_base)
                 .map_err(|e| format!("asmr.one 抓取失败: {e}"))
         }
         _ => match scraper::fetch_work_metadata(rj_code, proxy) {
             Ok(w) => Ok(w),
-            Err(dl_err) => match crate::api::asmrone::fetch_work_from_asmrone(rj_code, token, proxy)
-            {
+            Err(dl_err) => match crate::api::asmrone::fetch_work_from_asmrone(
+                rj_code,
+                token,
+                proxy,
+                asmr_api_base,
+            ) {
                 Ok(w) => Ok(w),
                 Err(asmr_err) => Err(format!(
                     "DLsite 抓取失败: {dl_err}；且 asmr.one 回退抓取失败: {asmr_err}"
@@ -50,18 +55,22 @@ pub async fn import_by_rj(
     State(state): State<SharedState>,
     Json(body): Json<RjSourceBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let (token, proxy) = {
+    let (token, proxy, asmr_api_base) = {
         let conn = state.db.lock().map_err(AppError::new)?;
         let token = queries::get_setting(&conn, "asmr_one_token")
             .ok()
             .flatten()
             .unwrap_or_default();
-        (token, ProxyConfig::from_conn(&conn))
+        let asmr_api_base = crate::api::asmrone::normalize_api_base(
+            queries::get_setting(&conn, "asmr_one_address").ok().flatten().as_deref(),
+        );
+        (token, ProxyConfig::from_conn(&conn), asmr_api_base)
     };
     let rj = body.rj_code;
     let source = body.source;
     let scraped = tokio::task::spawn_blocking(move || {
-        fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy).map_err(AppError::new)
+        fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
+            .map_err(AppError::new)
     })
     .await
     .map_err(AppError::new)??;
@@ -86,18 +95,22 @@ pub async fn preview_by_rj(
     State(state): State<SharedState>,
     Json(body): Json<RjSourceBody>,
 ) -> Result<Json<ScrapedWork>, AppError> {
-    let (token, proxy) = {
+    let (token, proxy, asmr_api_base) = {
         let conn = state.db.lock().map_err(AppError::new)?;
         let token = queries::get_setting(&conn, "asmr_one_token")
             .ok()
             .flatten()
             .unwrap_or_default();
-        (token, ProxyConfig::from_conn(&conn))
+        let asmr_api_base = crate::api::asmrone::normalize_api_base(
+            queries::get_setting(&conn, "asmr_one_address").ok().flatten().as_deref(),
+        );
+        (token, ProxyConfig::from_conn(&conn), asmr_api_base)
     };
     let rj = body.rj_code;
     let source = body.source;
     let scraped = tokio::task::spawn_blocking(move || {
-        fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy).map_err(AppError::new)
+        fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
+            .map_err(AppError::new)
     })
     .await
     .map_err(AppError::new)??;

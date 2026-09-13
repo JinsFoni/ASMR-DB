@@ -305,6 +305,9 @@ export function getSettings(): Promise<{
   proxy_url: string | null;
   proxy_dlsite: boolean;
   proxy_asmrone: boolean;
+  asmr_one_address: string | null;
+  asmr_one_username: string | null;
+  asmr_one_password: string | null;
 }> {
   return get("/api/settings");
 }
@@ -320,7 +323,8 @@ export function clearAsmrToken(): Promise<void> {
 export function setSettings(
   theme?: string,
   downloadDir?: string,
-  proxy?: { url?: string; dlsite?: boolean; asmrone?: boolean }
+  proxy?: { url?: string; dlsite?: boolean; asmrone?: boolean },
+  asmr?: { address?: string; username?: string; password?: string }
 ): Promise<void> {
   return post("/api/settings", {
     theme,
@@ -328,7 +332,18 @@ export function setSettings(
     proxyUrl: proxy?.url,
     proxyDlsite: proxy?.dlsite,
     proxyAsmrone: proxy?.asmrone,
+    asmrOneAddress: asmr?.address,
+    asmrOneUsername: asmr?.username,
+    asmrOnePassword: asmr?.password,
   });
+}
+
+/** 使用账号密码登录 asmr.one，成功后服务端自动保存 Token（凭据不传时使用已保存的）。 */
+export function asmrLogin(
+  username?: string,
+  password?: string
+): Promise<{ ok: boolean; message: string }> {
+  return post("/api/settings/asmr-login", { username, password });
 }
 
 export function getDbPath(): Promise<string> {

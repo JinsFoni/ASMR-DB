@@ -113,8 +113,8 @@ pub async fn asmr_file(
         return (StatusCode::BAD_REQUEST, "bad file hash").into_response();
     }
 
-    // 从 DB 读 asmr.one token 与代理配置
-    let (token, proxy) = {
+    // 从 DB 读 asmr.one token、代理配置与 API 地址
+    let (token, proxy, api_base) = {
         let conn = state.db.lock().map_err(AppError::new);
         match conn {
             Ok(c) => (
@@ -123,8 +123,11 @@ pub async fn asmr_file(
                     .flatten()
                     .unwrap_or_default(),
                 crate::api::proxy::ProxyConfig::from_conn(&c),
+                crate::api::asmrone::normalize_api_base(
+                    queries::get_setting(&c, "asmr_one_address").ok().flatten().as_deref(),
+                ),
             ),
-            Err(_) => (String::new(), Default::default()),
+            Err(_) => (String::new(), Default::default(), crate::api::asmrone::DEFAULT_API_BASE.to_string()),
         }
     };
 
@@ -155,8 +158,8 @@ pub async fn asmr_file(
     };
 
     // 先试完整 hash；若 404 再退回纯 fileId（两种 hash 形态都覆盖）
-    let url_hash = format!("https://api.asmr-100.com/api/file/{}", hash);
-    let url_fid = format!("https://api.asmr-100.com/api/file/{}", file_id);
+    let url_hash = format!("{api_base}/api/file/{hash}");
+    let url_fid = format!("{api_base}/api/file/{file_id}");
 
     let resp = match do_fetch(&client, &url_hash).send().await {
         Ok(r) if r.status() == reqwest::StatusCode::NOT_FOUND && file_id != hash => {

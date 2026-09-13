@@ -40,6 +40,13 @@ const proxyAsmrone = ref(false);
 const proxySaved = ref(false);
 const proxySaving = ref(false);
 
+// asmr.one 站点配置（地址 / 账号 / 密码，登录成功后 Token 自动保存）
+const asmrAddress = ref("");
+const asmrUsername = ref("");
+const asmrPassword = ref("");
+const asmrLoginLoading = ref(false);
+const asmrLoginMsg = ref<{ ok: boolean; text: string } | null>(null);
+
 // 目录选择器与数据库导入
 const showFolderPicker = ref(false);
 const importFileInput = ref<HTMLInputElement | null>(null);
@@ -56,6 +63,9 @@ onMounted(async () => {
   proxyUrl.value = s.proxy_url || "";
   proxyDlsite.value = s.proxy_dlsite;
   proxyAsmrone.value = s.proxy_asmrone;
+  asmrAddress.value = s.asmr_one_address || "";
+  asmrUsername.value = s.asmr_one_username || "";
+  asmrPassword.value = s.asmr_one_password || "";
 });
 
 function selectTheme(t: ThemeName) {
@@ -104,6 +114,34 @@ async function saveProxy() {
 async function clearAsmr() {
   await api.clearAsmrToken();
   asmrToken.value = "";
+}
+
+/** 保存站点配置并用账号密码登录：成功后服务端自动保存新 Token */
+async function saveAndLoginAsmr() {
+  if (asmrLoginLoading.value) return;
+  if (!asmrUsername.value.trim() || !asmrPassword.value) {
+    asmrLoginMsg.value = { ok: false, text: "请先填写账号和密码" };
+    return;
+  }
+  asmrLoginLoading.value = true;
+  asmrLoginMsg.value = null;
+  try {
+    // 先持久化站点配置，再登录（登录端点会读取已保存的地址）
+    await api.setSettings(undefined, undefined, undefined, {
+      address: asmrAddress.value.trim(),
+      username: asmrUsername.value.trim(),
+      password: asmrPassword.value,
+    });
+    const res = await api.asmrLogin();
+    asmrLoginMsg.value = { ok: true, text: res.message };
+    // 拉取最新设置，刷新 Token 展示
+    const s = await api.getSettings();
+    asmrToken.value = s.asmr_one_token || "";
+  } catch (e) {
+    asmrLoginMsg.value = { ok: false, text: String(e) };
+  } finally {
+    asmrLoginLoading.value = false;
+  }
 }
 
 /** 导出数据库备份：服务端生成快照，浏览器直接下载。 */
@@ -222,12 +260,45 @@ function handleDirPicked(dir: string) {
         <Monitor :size="14" class="text-accent" /> asmr.one 数据源
       </h3>
       <p class="text-[11px] text-muted mb-2">
-        asmr.one 有反爬，程序直接请求会被拦截。用浏览器打开并登录
+        推荐直接填写下方的<b class="text-white/80">站点地址、账号和密码</b>，点击「保存并登录」即可自动获取
+        Token（会在本机数据库中保存凭据）。也可以手动方式：用浏览器打开并登录
         <b class="text-white/80">www.asmr.one</b>，按 <b class="text-white/80">F12</b> →
         应用（Application）→ 本地存储（Local Storage）→ www.asmr.one，复制里面
         <b class="text-white/80">以 <code class="text-accent">eyJ</code> 开头</b>的长字符串（JWT），
         粘贴到下面保存即可。
       </p>
+      <!-- 站点配置自动登录 -->
+      <div class="space-y-2 mb-3">
+        <input
+          v-model="asmrAddress"
+          class="input w-full !text-xs font-mono"
+          placeholder="asmr.one 地址（可选，默认 https://api.asmr.one，可填镜像如 api.asmr-200.com）"
+        />
+        <div class="flex gap-2">
+          <input
+            v-model="asmrUsername"
+            class="input flex-1 !text-xs"
+            placeholder="账号（邮箱）"
+            autocomplete="off"
+          />
+          <input
+            v-model="asmrPassword"
+            type="password"
+            class="input flex-1 !text-xs"
+            placeholder="密码"
+            autocomplete="new-password"
+            @keyup.enter="saveAndLoginAsmr"
+          />
+          <button class="btn-primary !text-xs shrink-0" :disabled="asmrLoginLoading" @click="saveAndLoginAsmr">
+            <Loader2 v-if="asmrLoginLoading" :size="13" class="animate-spin" />
+            <Check v-else :size="13" />
+            保存并登录
+          </button>
+        </div>
+        <p v-if="asmrLoginMsg" class="text-[11px]" :class="asmrLoginMsg.ok ? 'text-green-400' : 'text-accent'">
+          {{ asmrLoginMsg.ok ? "✅" : "⚠️" }} {{ asmrLoginMsg.text }}
+        </p>
+      </div>
       <textarea
         v-model="asmrToken"
         rows="3"

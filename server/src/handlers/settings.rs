@@ -24,6 +24,10 @@ pub struct SettingsResponse {
     pub proxy_dlsite: bool,
     /// asmr.one 请求是否走代理
     pub proxy_asmrone: bool,
+    /// asmr.one 站点/API 地址（空 = 默认 api.asmr.one）
+    pub asmr_one_address: Option<String>,
+    pub asmr_one_username: Option<String>,
+    pub asmr_one_password: Option<String>,
 }
 
 pub async fn get_settings(
@@ -49,6 +53,9 @@ pub async fn get_settings(
                 .ok()
                 .flatten()
                 .is_some_and(|v| v == "1"),
+            asmr_one_address: queries::get_setting(&conn, "asmr_one_address").ok().flatten(),
+            asmr_one_username: queries::get_setting(&conn, "asmr_one_username").ok().flatten(),
+            asmr_one_password: queries::get_setting(&conn, "asmr_one_password").ok().flatten(),
         })
     })
     .await
@@ -64,6 +71,9 @@ pub struct SetSettingsBody {
     pub proxy_url: Option<String>,
     pub proxy_dlsite: Option<bool>,
     pub proxy_asmrone: Option<bool>,
+    pub asmr_one_address: Option<String>,
+    pub asmr_one_username: Option<String>,
+    pub asmr_one_password: Option<String>,
 }
 
 pub async fn set_settings(
@@ -88,6 +98,15 @@ pub async fn set_settings(
         if let Some(b) = body.proxy_asmrone {
             queries::set_setting(&conn, "proxy_asmrone", if b { "1" } else { "0" })
                 .map_err(AppError::new)?;
+        }
+        if let Some(a) = body.asmr_one_address {
+            queries::set_setting(&conn, "asmr_one_address", a.trim()).map_err(AppError::new)?;
+        }
+        if let Some(u) = body.asmr_one_username {
+            queries::set_setting(&conn, "asmr_one_username", u.trim()).map_err(AppError::new)?;
+        }
+        if let Some(p) = body.asmr_one_password {
+            queries::set_setting(&conn, "asmr_one_password", p.as_str()).map_err(AppError::new)?;
         }
         Ok(())
     })
@@ -124,6 +143,66 @@ pub async fn clear_asmr_token(
     .await
     .map_err(AppError::new)??;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AsmrLoginBody {
+    /// 不传时使用设置里已保存的账号密码
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+/// 使用账号密码登录 asmr.one：成功后把返回的 token 存入设置（替代手动粘贴 Token）。
+pub async fn asmr_login(
+    State(state): State<SharedState>,
+    body: Option<Json<AsmrLoginBody>>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+    let (address, saved_username, saved_password, proxy) = {
+        let conn = state.db.lock().map_err(AppError::new)?;
+        (
+            queries::get_setting(&conn, "asmr_one_address").ok().flatten(),
+            queries::get_setting(&conn, "asmr_one_username").ok().flatten(),
+            queries::get_setting(&conn, "asmr_one_password").ok().flatten(),
+            crate::api::proxy::ProxyConfig::from_conn(&conn),
+        )
+    };
+    // 请求体优先，其次设置里保存的
+    let provided_password = body.password.clone();
+    let username = body
+        .username
+        .or(saved_username)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let password = provided_password.clone().or(saved_password).unwrap_or_default();
+    if username.is_empty() || password.is_empty() {
+        return Err(AppError("请先填写 asmr.one 账号和密码".to_string()));
+    }
+    let api_base = crate::api::asmrone::normalize_api_base(address.as_deref());
+
+    let username2 = username.clone();
+    let token = tokio::task::spawn_blocking(move || {
+        crate::api::asmrone::login(&api_base, &username, &password, &proxy).map_err(AppError::new)
+    })
+    .await
+    .map_err(AppError::new)??;
+
+    // 登录成功：保存 token（账号密码由「保存设置」或本次请求体负责持久化）
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let conn = state.db.lock().map_err(AppError::new)?;
+        queries::set_setting(&conn, "asmr_one_token", &token).map_err(AppError::new)?;
+        queries::set_setting(&conn, "asmr_one_username", username2.trim()).map_err(AppError::new)?;
+        if let Some(p) = provided_password.filter(|p| !p.is_empty()) {
+            queries::set_setting(&conn, "asmr_one_password", &p).map_err(AppError::new)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(AppError::new)??;
+
+    Ok(Json(json!({ "ok": true, "message": "登录成功，Token 已自动保存" })))
 }
 
 pub async fn db_path(
@@ -461,7 +540,7 @@ pub async fn fetch_subtitle(
     State(state): State<SharedState>,
     axum::extract::Query(q): axum::extract::Query<SubtitleFetchQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let (token, proxy) = {
+    let (token, proxy, api_base) = {
         let conn = state.db.lock().map_err(AppError::new)?;
         (
             queries::get_setting(&conn, "asmr_one_token")
@@ -469,17 +548,26 @@ pub async fn fetch_subtitle(
                 .flatten()
                 .unwrap_or_default(),
             crate::api::proxy::ProxyConfig::from_conn(&conn),
+            crate::api::asmrone::normalize_api_base(
+                queries::get_setting(&conn, "asmr_one_address").ok().flatten().as_deref(),
+            ),
         )
     };
     let url = q.url;
-    let content =
-        tokio::task::spawn_blocking(move || fetch_subtitle_impl(&url, &token, &proxy).map_err(AppError::new))
-            .await
-            .map_err(AppError::new)??;
+    let content = tokio::task::spawn_blocking(move || {
+        fetch_subtitle_impl(&url, &token, &proxy, &api_base).map_err(AppError::new)
+    })
+    .await
+    .map_err(AppError::new)??;
     Ok(Json(json!({ "content": content })))
 }
 
-fn fetch_subtitle_impl(url: &str, token: &str, proxy: &crate::api::proxy::ProxyConfig) -> Result<String, String> {
+fn fetch_subtitle_impl(
+    url: &str,
+    token: &str,
+    proxy: &crate::api::proxy::ProxyConfig,
+    api_base: &str,
+) -> Result<String, String> {
     let url_trimmed = url.trim();
     if url_trimmed.is_empty() {
         return Ok(String::new());
@@ -501,13 +589,13 @@ fn fetch_subtitle_impl(url: &str, token: &str, proxy: &crate::api::proxy::ProxyC
 
     // 2) 在线 URL / 本服务 asmr 代理路径 / 旧自定义协议路径
     let target_url = if let Some(hash) = url_trimmed.strip_prefix("/api/asmr/file/") {
-        format!("https://api.asmr-100.com/api/file/{hash}")
+        format!("{api_base}/api/file/{hash}")
     } else if let Some(hash) = url_trimmed.strip_prefix("http://asmr.localhost/file/") {
-        format!("https://api.asmr-100.com/api/file/{hash}")
+        format!("{api_base}/api/file/{hash}")
     } else if let Some(hash) = url_trimmed.strip_prefix("asmr://file/") {
-        format!("https://api.asmr-100.com/api/file/{hash}")
+        format!("{api_base}/api/file/{hash}")
     } else if let Some(hash) = url_trimmed.strip_prefix("asmr://") {
-        format!("https://api.asmr-100.com/api/file/{hash}")
+        format!("{api_base}/api/file/{hash}")
     } else {
         url_trimmed.to_string()
     };

@@ -366,10 +366,10 @@ pub async fn list_asmrone_tracks(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<Track>>, AppError> {
-    let token = get_asmr_token(&state).await?;
-    let proxy = get_proxy_config(&state).await?;
+    let (token, proxy, api_base) = get_asmr_ctx(&state).await?;
     let files = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_audio_files(&q.rj, Some(&token), &proxy).map_err(AppError::new)
+        crate::api::asmrone::fetch_audio_files(&q.rj, Some(&token), &proxy, &api_base)
+            .map_err(AppError::new)
     })
     .await
     .map_err(AppError::new)??;
@@ -411,38 +411,68 @@ pub async fn list_asmrone_tree(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<crate::api::asmrone::AsmrTreeNode>>, AppError> {
-    let token = get_asmr_token(&state).await?;
-    let proxy = get_proxy_config(&state).await?;
+    let (token, proxy, api_base) = get_asmr_ctx(&state).await?;
     let rj = q.rj;
     let tree = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_file_tree(&rj, Some(&token), &proxy).map_err(AppError::new)
+        crate::api::asmrone::fetch_file_tree(&rj, Some(&token), &proxy, &api_base)
+            .map_err(AppError::new)
     })
     .await
     .map_err(AppError::new)??;
     Ok(Json(tree))
 }
 
-async fn get_asmr_token(state: &SharedState) -> Result<String, AppError> {
-    let state2 = state.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = state2.db.lock().map_err(AppError::new)?;
-        Ok(queries::get_setting(&conn, "asmr_one_token")
-            .ok()
-            .flatten()
-            .unwrap_or_default())
-    })
-    .await
-    .map_err(AppError::new)?
-}
-
-async fn get_proxy_config(
+/// 读取 asmr.one 请求上下文：(token, 代理配置, API 基址)。
+/// token 为空且设置了账号密码时自动登录并保存新 token。
+async fn get_asmr_ctx(
     state: &SharedState,
-) -> Result<crate::api::proxy::ProxyConfig, AppError> {
+) -> Result<(String, crate::api::proxy::ProxyConfig, String), AppError> {
     let state2 = state.clone();
-    tokio::task::spawn_blocking(move || {
-        let conn = state2.db.lock().map_err(AppError::new)?;
-        Ok(crate::api::proxy::ProxyConfig::from_conn(&conn))
-    })
+    let (mut token, proxy, api_base, username, password) = tokio::task::spawn_blocking(
+        move || -> Result<_, AppError> {
+            let conn = state2.db.lock().map_err(AppError::new)?;
+            let get = |k: &str| {
+                queries::get_setting(&conn, k).ok().flatten().unwrap_or_default()
+            };
+            let api_base = crate::api::asmrone::normalize_api_base(
+                queries::get_setting(&conn, "asmr_one_address").ok().flatten().as_deref(),
+            );
+            Ok((
+                get("asmr_one_token"),
+                crate::api::proxy::ProxyConfig::from_conn(&conn),
+                api_base,
+                get("asmr_one_username"),
+                get("asmr_one_password"),
+            ))
+        },
+    )
     .await
-    .map_err(AppError::new)?
+    .map_err(AppError::new)??;
+
+    // 自动登录：token 为空且配置了账号密码（网络请求放在锁外，避免阻塞其他请求）
+    if token.trim().is_empty() && !username.trim().is_empty() && !password.is_empty() {
+        let api_base2 = api_base.clone();
+        let proxy2 = proxy.clone();
+        match tokio::task::spawn_blocking(move || {
+            crate::api::asmrone::login(&api_base2, username.trim(), &password, &proxy2)
+        })
+        .await
+        .map_err(AppError::new)?
+        {
+            Ok(t) => {
+                let state2 = state.clone();
+                let t2 = t.clone();
+                tokio::task::spawn_blocking(move || {
+                    let conn = state2.db.lock().map_err(AppError::new)?;
+                    queries::set_setting(&conn, "asmr_one_token", &t2).map_err(AppError::new)
+                })
+                .await
+                .map_err(AppError::new)??;
+                println!("🔑 asmr.one 自动登录成功，token 已保存");
+                token = t;
+            }
+            Err(e) => eprintln!("⚠️ asmr.one 自动登录失败: {e}"),
+        }
+    }
+    Ok((token, proxy, api_base))
 }

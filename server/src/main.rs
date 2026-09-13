@@ -232,6 +232,10 @@ async fn main() {
             "/api/settings/asmr-token",
             delete(handlers::settings::clear_asmr_token),
         )
+        .route(
+            "/api/settings/asmr-login",
+            post(handlers::settings::asmr_login),
+        )
         .route("/api/settings/db-path", get(handlers::settings::db_path))
         .route(
             "/api/settings/db/export",

@@ -15,8 +15,82 @@ use std::error::Error;
 /// 公开给 lib.rs 的 custom protocol handler 复用。
 pub const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
-const API_BASE: &str = "https://api.asmr-200.com/api";
+/// 默认 API 基址（asmr.one 官方主域名）。
+pub const DEFAULT_API_BASE: &str = "https://api.asmr.one";
+
 const WEB_BASE: &str = "https://www.asmr.one/work";
+
+/// 根据用户配置的站点地址推导 API 基址。
+/// 规则：无 scheme 补 https://；非 api. 开头的主机（如 www.asmr.one / asmr.one）
+/// 自动换成 api. 前缀；已带 api. 前缀（含镜像 api.asmr-100/200/300.com）原样使用。
+pub fn normalize_api_base(input: Option<&str>) -> String {
+    let Some(raw) = input.map(str::trim).filter(|s| !s.is_empty()) else {
+        return DEFAULT_API_BASE.to_string();
+    };
+    let with_scheme = if raw.contains("://") {
+        raw.to_string()
+    } else {
+        format!("https://{raw}")
+    };
+    let host = with_scheme
+        .split("://")
+        .nth(1)
+        .unwrap_or_default()
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    if host.is_empty() {
+        return DEFAULT_API_BASE.to_string();
+    }
+    if host.starts_with("api.") {
+        format!("https://{host}")
+    } else {
+        let bare = host.trim_start_matches("www.");
+        format!("https://api.{bare}")
+    }
+}
+
+/// 使用账号密码登录 asmr.one，成功返回 JWT token。
+/// 登录端点：POST {base}/api/auth/me，请求体 {"name": 账号, "password": 密码}。
+pub fn login(
+    api_base: &str,
+    username: &str,
+    password: &str,
+    proxy: &ProxyConfig,
+) -> Result<String, String> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::REFERER,
+        "https://www.asmr.one/".parse().unwrap(),
+    );
+    let builder = reqwest::blocking::Client::builder()
+        .user_agent(USER_AGENT)
+        .default_headers(headers)
+        .timeout(std::time::Duration::from_secs(30));
+    let client = proxy
+        .apply_blocking(builder, ProxyTarget::AsmrOne)
+        .build()
+        .map_err(|e| format!("构建请求客户端失败: {e}"))?;
+
+    let resp = client
+        .post(format!("{api_base}/api/auth/me"))
+        .json(&serde_json::json!({ "name": username, "password": password }))
+        .send()
+        .map_err(|e| format!("连接 asmr.one 失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "登录失败: HTTP {}（请检查账号密码或站点地址）",
+            resp.status()
+        ));
+    }
+    let v: serde_json::Value = resp.json().map_err(|e| format!("解析登录响应失败: {e}"))?;
+    v.get("token")
+        .and_then(|t| t.as_str())
+        .map(String::from)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "登录响应中没有 token".to_string())
+}
 
 fn build_client(proxy: &ProxyConfig) -> Result<reqwest::blocking::Client, Box<dyn Error>> {
     let mut headers = reqwest::header::HeaderMap::new();
@@ -39,24 +113,25 @@ fn dlsite_url(rj: &str) -> String {
 }
 
 /// 抓取 asmr.one 作品元数据（多策略）。
-/// token 为 asmr.one 登录后抓取的 Bearer token（可选）。
+/// token 为 asmr.one 登录后的 Bearer token（可选），api_base 为可配置的 API 基址。
 pub fn fetch_work_from_asmrone(
     rj_code: &str,
     token: Option<&str>,
     proxy: &ProxyConfig,
+    api_base: &str,
 ) -> Result<ScrapedWork, Box<dyn Error>> {
     let rj = rj_code.trim().to_uppercase();
     let client = build_client(proxy)?;
 
     // 1) 带 token 的 API（登录态）
     if let Some(t) = token.filter(|t| !t.trim().is_empty()) {
-        if let Some(w) = fetch_from_api(&client, &rj, Some(t)) {
+        if let Some(w) = fetch_from_api(&client, api_base, &rj, Some(t)) {
             return Ok(w);
         }
     }
 
     // 2) 公开 JSON API（匿名）
-    let api_err = match fetch_from_api(&client, &rj, None) {
+    let api_err = match fetch_from_api(&client, api_base, &rj, None) {
         Some(w) => return Ok(w),
         None => "API 返回空数据".to_string(),
     };
@@ -178,6 +253,7 @@ pub fn fetch_file_tree(
     rj_code: &str,
     token: Option<&str>,
     proxy: &ProxyConfig,
+    api_base: &str,
 ) -> Result<Vec<AsmrTreeNode>, String> {
     let rj = rj_code.trim().to_uppercase();
     let work_id: u64 = rj
@@ -185,7 +261,7 @@ pub fn fetch_file_tree(
         .parse()
         .map_err(|_| format!("无效的 RJ 号: {rj}"))?;
     let client = build_client(proxy).map_err(|e| e.to_string())?;
-    let url = format!("https://api.asmr-100.com/api/tracks/{}", work_id);
+    let url = format!("{api_base}/api/tracks/{work_id}");
     let mut req = client.get(&url);
     if let Some(t) = token.filter(|t| !t.trim().is_empty()) {
         req = req.bearer_auth(t);
@@ -208,6 +284,7 @@ pub fn fetch_audio_files(
     rj_code: &str,
     token: Option<&str>,
     proxy: &ProxyConfig,
+    api_base: &str,
 ) -> Result<Vec<AsmrFile>, String> {
     let rj = rj_code.trim().to_uppercase();
     let work_id: u64 = rj
@@ -215,7 +292,7 @@ pub fn fetch_audio_files(
         .parse()
         .map_err(|_| format!("无效的 RJ 号: {rj}"))?;
     let client = build_client(proxy).map_err(|e| e.to_string())?;
-    let url = format!("https://api.asmr-100.com/api/tracks/{}", work_id);
+    let url = format!("{api_base}/api/tracks/{work_id}");
     let mut req = client.get(&url);
     if let Some(t) = token.filter(|t| !t.trim().is_empty()) {
         req = req.bearer_auth(t);
@@ -437,11 +514,12 @@ fn asmr_numeric_id(rj: &str) -> Option<String> {
 /// 成功返回 Some，失败/无数据返回 None。
 fn fetch_from_api(
     client: &reqwest::blocking::Client,
+    api_base: &str,
     rj: &str,
     token: Option<&str>,
 ) -> Option<ScrapedWork> {
     let work_id = asmr_numeric_id(rj)?;
-    let url = format!("{}/work/{}", API_BASE, work_id);
+    let url = format!("{api_base}/api/work/{work_id}");
     let mut req = client.get(&url);
     if let Some(t) = token {
         req = req.bearer_auth(t);
@@ -650,6 +728,32 @@ fn names_from_objects(v: &serde_json::Value, keys: &[&str]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalize_api_base_variants() {
+        assert_eq!(normalize_api_base(None), DEFAULT_API_BASE);
+        assert_eq!(normalize_api_base(Some("")), DEFAULT_API_BASE);
+        assert_eq!(normalize_api_base(Some("  ")), DEFAULT_API_BASE);
+        // 站点地址自动换成 api. 前缀
+        assert_eq!(
+            normalize_api_base(Some("https://www.asmr.one")),
+            "https://api.asmr.one"
+        );
+        assert_eq!(normalize_api_base(Some("asmr.one")), "https://api.asmr.one");
+        assert_eq!(
+            normalize_api_base(Some("www.asmr.one/work")),
+            "https://api.asmr.one"
+        );
+        // api. 前缀（含镜像）原样保留，去掉路径
+        assert_eq!(
+            normalize_api_base(Some("https://api.asmr-200.com")),
+            "https://api.asmr-200.com"
+        );
+        assert_eq!(
+            normalize_api_base(Some("api.asmr-100.com/api")),
+            "https://api.asmr-100.com"
+        );
+    }
 
     #[test]
     fn names_from_objects_works() {
