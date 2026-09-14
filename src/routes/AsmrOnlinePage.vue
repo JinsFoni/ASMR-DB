@@ -5,8 +5,11 @@ import { Loader2, ChevronLeft, ChevronRight, Star, Heart, ListVideo, History, Us
 import * as api from "../lib/api";
 import type { AsmrOnlineWork, AsmrPlaylist, AsmrWorksPage } from "../lib/types";
 import AsmrWorkCard from "../components/asmr/AsmrWorkCard.vue";
+import { useWorksStore } from "../stores/works";
 
 const router = useRouter();
+const worksStore = useWorksStore();
+const addingId = ref<string | number | null>(null);
 const route = useRoute();
 
 const SOURCE_TABS = [
@@ -122,6 +125,23 @@ function open(item: AsmrOnlineWork) {
   saveScrollNow();
   if (item.local_work_id) router.push(`/work/${item.local_work_id}`);
   else router.push(`/asmr/work/${item.id}`);
+}
+
+/** 卡片入库：按 RJ 号抓取元数据入库，成功后原地变为已入库状态 */
+async function addToLibrary(item: AsmrOnlineWork) {
+  if (addingId.value || !item.rj_code) return;
+  addingId.value = item.id;
+  try {
+    const res = await api.importByRj(item.rj_code);
+    item.local_work_id = res.work.work.id;
+    // 同步 Pinia store，否则切回作品库时因缓存看不到新入库的作品
+    worksStore.fetchWorks();
+    worksStore.loadTags();
+  } catch (e) {
+    alert(`入库失败: ${e}`);
+  } finally {
+    addingId.value = null;
+  }
 }
 
 function prevPage() {
@@ -267,7 +287,14 @@ onActivated(() => {
 
     <!-- 卡片网格 -->
     <div v-if="!loading && items.length" class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(300px, 1fr))">
-      <AsmrWorkCard v-for="item in items" :key="`${item.id}-${item.rj_code}`" :item="item" @open="open" />
+      <AsmrWorkCard
+        v-for="item in items"
+        :key="`${item.id}-${item.rj_code}`"
+        :item="item"
+        :adding="addingId === item.id"
+        @open="open"
+        @add="addToLibrary"
+      />
     </div>
 
     <!-- 分页 -->

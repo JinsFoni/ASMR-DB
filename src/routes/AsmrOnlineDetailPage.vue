@@ -33,6 +33,7 @@ const loading = ref(true);
 const error = ref("");
 const copied = ref(false);
 const onlineLoading = ref(false);
+const importing = ref(false);
 
 const title = computed(() => detail.value?.title || detail.value?.rj_code || `#${workId}`);
 
@@ -139,6 +140,19 @@ async function playOnline() {
     alert(`在线试听失败: ${e}`);
   } finally {
     onlineLoading.value = false;
+  }
+}
+
+/** 入库：按 RJ 号抓取元数据保存后跳转本地作品详情 */
+async function importWork() {
+  if (!detail.value || importing.value || !detail.value.rj_code) return;
+  importing.value = true;
+  try {
+    const res = await api.importByRj(detail.value.rj_code);
+    router.push(`/work/${res.work.work.id}`);
+  } catch (e) {
+    alert(`入库失败: ${e}`);
+    importing.value = false;
   }
 }
 
@@ -250,6 +264,17 @@ function goLocal() {
             <Loader2 v-if="onlineLoading" :size="14" class="animate-spin" />
             <Headphones v-else :size="14" />
             在线试听
+          </button>
+          <button
+            v-if="!detail.local_work_id && detail.rj_code"
+            class="btn-outline"
+            :disabled="importing"
+            title="将此作品加入作品库"
+            @click="importWork"
+          >
+            <Loader2 v-if="importing" :size="14" class="animate-spin" />
+            <BookmarkCheck v-else :size="14" />
+            入库
           </button>
           <button v-if="detail.local_work_id" class="btn-outline" @click="goLocal">
             <Library :size="14" /> 本地详情

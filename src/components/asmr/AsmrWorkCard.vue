@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BookmarkCheck, CheckCircle2, ImageOff } from "lucide-vue-next";
+import { BookmarkCheck, CheckCircle2, ImageOff, Loader2 } from "lucide-vue-next";
 import type { AsmrOnlineWork } from "../../lib/types";
 
 const props = defineProps<{
   item: AsmrOnlineWork;
   /** 本地库中已存在的本地作品 id（用于已入库标识与跳转） */
   localWorkId?: number | null;
+  /** 该卡片正在执行入库 */
+  adding?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "open", item: AsmrOnlineWork): void;
+  (e: "add", item: AsmrOnlineWork): void;
 }>();
 
 const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? null);
@@ -67,7 +70,7 @@ const metaText = computed(() => {
     </div>
 
     <!-- 信息 -->
-    <div class="p-2.5">
+    <div class="p-2.5 relative">
       <div class="text-xs font-medium text-white ellipsis-2 min-h-[2.2rem]" :title="title">
         {{ title }}
       </div>
@@ -75,7 +78,7 @@ const metaText = computed(() => {
         <span v-if="item.rj_code" class="font-mono">{{ item.rj_code }}</span>
         <span v-if="item.circle_name"> · {{ item.circle_name }}</span>
       </div>
-      <div v-if="item.tags.length" class="flex flex-wrap gap-1 mt-1.5 min-h-[18px]">
+      <div v-if="item.tags.length" class="flex flex-wrap gap-1 mt-1.5 min-h-[18px]" :class="localId || !item.rj_code ? '' : 'pr-14'">
         <span
           v-for="t in item.tags.slice(0, 3)"
           :key="t"
@@ -84,9 +87,23 @@ const metaText = computed(() => {
           {{ t }}
         </span>
       </div>
-      <div class="flex items-center gap-2 mt-1.5 text-[10px] text-muted min-h-[14px]">
+      <div class="flex items-center gap-2 mt-1.5 text-[10px] text-muted min-h-[14px]" :class="localId || !item.rj_code ? '' : 'pr-14'">
         <span v-if="metaText">{{ metaText }}</span>
       </div>
+
+      <!-- 入库按钮（未入库且有 RJ 号时显示在信息区右下角） -->
+      <!-- 卡片根元素是 <a>，必须 .prevent 阻止默认导航，否则点击入库会误跳详情 -->
+      <button
+        v-if="!localId && item.rj_code"
+        class="btn-primary absolute bottom-2.5 right-2.5 !text-[10px] !px-2 !py-1"
+        :disabled="adding"
+        title="将此作品加入作品库"
+        @click.stop.prevent="emit('add', item)"
+      >
+        <Loader2 v-if="adding" :size="11" class="animate-spin" />
+        <BookmarkCheck v-else :size="11" />
+        入库
+      </button>
     </div>
   </a>
 </template>
