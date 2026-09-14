@@ -144,6 +144,41 @@ export interface DlsiteRankingResponse {
   lastFetched: string | null;
 }
 
+export interface AsmrOnlineWork {
+  id: number;
+  rj_code: string | null;
+  title: string;
+  circle_name: string | null;
+  cover_url: string | null;
+  release: string | null;
+  dl_count: number | null;
+  price: number | null;
+  rating: number | null;
+  rate_count: number | null;
+  duration_sec: number | null;
+  vas: string[];
+  tags: string[];
+  description: string | null;
+  /** 本地作品 id（播放历史等本站数据直接关联本地） */
+  local_work_id: number | null;
+}
+
+export interface AsmrWorksPage {
+  type: "works";
+  items: AsmrOnlineWork[];
+  page: number;
+  hasNext: boolean;
+}
+
+export interface AsmrPlaylist {
+  id: string;
+  name: string;
+  description: string | null;
+  works_count: number | null;
+  main_cover_url: string | null;
+  user_name: string | null;
+}
+
 export interface WorkListResponse {
   items: WorkView[];
   total: number;

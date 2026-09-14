@@ -366,9 +366,9 @@ pub async fn list_asmrone_tracks(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<Track>>, AppError> {
-    let (token, proxy, api_base) = get_asmr_ctx(&state).await?;
+    let ctx = get_asmr_ctx(&state).await?;
     let files = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_audio_files(&q.rj, Some(&token), &proxy, &api_base)
+        crate::api::asmrone::fetch_audio_files(&q.rj, Some(&ctx.token), &ctx.proxy, &ctx.api_base)
             .map_err(AppError::new)
     })
     .await
@@ -411,10 +411,10 @@ pub async fn list_asmrone_tree(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<crate::api::asmrone::AsmrTreeNode>>, AppError> {
-    let (token, proxy, api_base) = get_asmr_ctx(&state).await?;
+    let ctx = get_asmr_ctx(&state).await?;
     let rj = q.rj;
     let tree = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_file_tree(&rj, Some(&token), &proxy, &api_base)
+        crate::api::asmrone::fetch_file_tree(&rj, Some(&ctx.token), &ctx.proxy, &ctx.api_base)
             .map_err(AppError::new)
     })
     .await
@@ -422,11 +422,19 @@ pub async fn list_asmrone_tree(
     Ok(Json(tree))
 }
 
-/// 读取 asmr.one 请求上下文：(token, 代理配置, API 基址)。
+/// asmr.one 请求上下文：token / 代理 / API 基址 / 登录凭据。
+#[derive(Clone)]
+pub(crate) struct AsmrCtx {
+    pub token: String,
+    pub proxy: crate::api::proxy::ProxyConfig,
+    pub api_base: String,
+    pub username: String,
+    pub password: String,
+}
+
+/// 读取 asmr.one 请求上下文。
 /// token 为空且设置了账号密码时自动登录并保存新 token。
-async fn get_asmr_ctx(
-    state: &SharedState,
-) -> Result<(String, crate::api::proxy::ProxyConfig, String), AppError> {
+pub(crate) async fn get_asmr_ctx(state: &SharedState) -> Result<AsmrCtx, AppError> {
     let state2 = state.clone();
     let (mut token, proxy, api_base, username, password) = tokio::task::spawn_blocking(
         move || -> Result<_, AppError> {
@@ -451,28 +459,45 @@ async fn get_asmr_ctx(
 
     // 自动登录：token 为空且配置了账号密码（网络请求放在锁外，避免阻塞其他请求）
     if token.trim().is_empty() && !username.trim().is_empty() && !password.is_empty() {
-        let api_base2 = api_base.clone();
-        let proxy2 = proxy.clone();
-        match tokio::task::spawn_blocking(move || {
-            crate::api::asmrone::login(&api_base2, username.trim(), &password, &proxy2)
-        })
-        .await
-        .map_err(AppError::new)?
-        {
+        match asmr_relogin(state, &api_base, &username, &password, &proxy).await {
             Ok(t) => {
-                let state2 = state.clone();
-                let t2 = t.clone();
-                tokio::task::spawn_blocking(move || {
-                    let conn = state2.db.lock().map_err(AppError::new)?;
-                    queries::set_setting(&conn, "asmr_one_token", &t2).map_err(AppError::new)
-                })
-                .await
-                .map_err(AppError::new)??;
                 println!("🔑 asmr.one 自动登录成功，token 已保存");
                 token = t;
             }
             Err(e) => eprintln!("⚠️ asmr.one 自动登录失败: {e}"),
         }
     }
-    Ok((token, proxy, api_base))
+    Ok(AsmrCtx { token, proxy, api_base, username, password })
+}
+
+/// 用账号密码重新登录 asmr.one 并保存新 token（401 重试时调用）。
+pub(crate) async fn asmr_relogin(
+    state: &SharedState,
+    api_base: &str,
+    username: &str,
+    password: &str,
+    proxy: &crate::api::proxy::ProxyConfig,
+) -> Result<String, AppError> {
+    if username.trim().is_empty() || password.is_empty() {
+        return Err(AppError("未配置 asmr.one 账号密码，请先到设置页登录".to_string()));
+    }
+    let api_base = api_base.to_string();
+    let username = username.trim().to_string();
+    let password = password.to_string();
+    let proxy2 = proxy.clone();
+    let token = tokio::task::spawn_blocking(move || {
+        crate::api::asmrone::login(&api_base, &username, &password, &proxy2).map_err(AppError::new)
+    })
+    .await
+    .map_err(AppError::new)??;
+
+    let state2 = state.clone();
+    let token2 = token.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = state2.db.lock().map_err(AppError::new)?;
+        queries::set_setting(&conn, "asmr_one_token", &token2).map_err(AppError::new)
+    })
+    .await
+    .map_err(AppError::new)??;
+    Ok(token)
 }

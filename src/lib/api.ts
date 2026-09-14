@@ -13,6 +13,9 @@ import type {
   AsmrTreeNode,
   AsmrDownloadFile,
   DlsiteRankingResponse,
+  AsmrOnlineWork,
+  AsmrWorksPage,
+  AsmrPlaylist,
 } from "./types";
 
 // ============================ HTTP 基础封装 ============================
@@ -372,6 +375,30 @@ export function importDatabase(file: File): Promise<string> {
 
 export function openFolder(path: string): Promise<void> {
   return post("/api/settings/open-folder", { path });
+}
+
+// ---------- ASMR ONE 在线浏览 ----------
+
+/** tab: popular（热门）| recommend（推荐）| all（全部，order 可选 release/dl_count/rating） */
+export function asmrBrowse(
+  tab: string,
+  page: number,
+  order?: string
+): Promise<AsmrWorksPage> {
+  return get(`/api/asmr/browse${qs({ tab, page, order })}`);
+}
+
+/** 账号数据：tab=favorite|playlist|history；playlist 需要时传播放列表 id */
+export function asmrAccount(
+  tab: string,
+  page?: number,
+  playlistId?: string
+): Promise<AsmrWorksPage | { type: "playlists"; playlists: AsmrPlaylist[] }> {
+  return get(`/api/asmr/account${qs({ tab, page, id: playlistId })}`);
+}
+
+export function asmrWorkDetail(id: number | string): Promise<AsmrOnlineWork> {
+  return get(`/api/asmr/work/${id}`);
 }
 
 // ---------- DLsite 排行榜 ----------

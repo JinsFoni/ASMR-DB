@@ -17,6 +17,10 @@ const title = computed(() => {
       return "🏆 DLsite 榜单";
     case "dlsite-work-detail":
       return "🔗 在线作品预览";
+    case "asmr":
+      return "🎧 ASMR ONE";
+    case "asmr-work-detail":
+      return "🎧 在线作品详情";
     case "import":
       return "➕ 导入作品";
     case "downloads":

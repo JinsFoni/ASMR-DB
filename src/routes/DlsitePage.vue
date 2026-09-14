@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { ref, computed, onMounted, onActivated, nextTick } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { RefreshCw, Loader2, Trophy } from "lucide-vue-next";
 import * as api from "../lib/api";
 import type { DlsiteRankingItem } from "../lib/types";
@@ -9,6 +9,7 @@ import { useWorksStore } from "../stores/works";
 
 const router = useRouter();
 const worksStore = useWorksStore();
+const route = useRoute();
 
 const TERMS = [
   { value: "day", label: "日榜" },
@@ -71,6 +72,7 @@ function switchTerm(value: string) {
 
 /** 已入库 → 本地详情；未入库 → 在线预览详情 */
 function open(item: DlsiteRankingItem) {
+  saveScrollNow();
   if (item.work_id) router.push(`/work/${item.work_id}`);
   else router.push(`/dlsite/work/${item.rj_code}`);
 }
@@ -93,7 +95,35 @@ async function addToLibrary(item: DlsiteRankingItem) {
   }
 }
 
-onMounted(load);
+// KeepAlive 缓存本页：滚动时实时记录位置（离开时再读已被路由重置），返回时恢复
+let savedScroll = 0;
+let scrollEl: HTMLElement | null = null;
+const onScroll = () => {
+  // 跳转详情时内容替换会把 scrollTop 重置为 0，该重置事件不计入（仅列表路由时记录）
+  if (route.name !== "dlsite") return;
+  savedScroll = scrollEl?.scrollTop ?? 0;
+};
+
+/** 立即记录当前滚动位置（卡片点击跳转前调用，兜底 scroll 事件不触发的场景） */
+function saveScrollNow() {
+  savedScroll = scrollEl?.scrollTop ?? savedScroll;
+}
+onMounted(() => {
+  load();
+  scrollEl = document.querySelector("main");
+  scrollEl?.addEventListener("scroll", onScroll, { passive: true });
+});
+onActivated(() => {
+  nextTick(() => {
+    const restore = () => {
+      if (scrollEl) scrollEl.scrollTop = savedScroll;
+    };
+    restore();
+    // 兜底：内容布局变化后再次校正（后台窗格 rAF 不触发，用 setTimeout）
+    setTimeout(restore, 50);
+    setTimeout(restore, 200);
+  });
+});
 </script>
 
 <template>

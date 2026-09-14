@@ -196,6 +196,19 @@ async fn main() {
             "/api/dlsite/ranking/refresh",
             post(handlers::dlsite::refresh_ranking),
         )
+        // ============ ASMR ONE 在线浏览 ============
+        .route(
+            "/api/asmr/browse",
+            get(handlers::asmr::browse),
+        )
+        .route(
+            "/api/asmr/account",
+            get(handlers::asmr::account),
+        )
+        .route(
+            "/api/asmr/work/{id}",
+            get(handlers::asmr::work_detail),
+        )
         // ============ asmr.one ============
         .route("/api/asmr/tracks", get(handlers::works::list_asmrone_tracks))
         .route("/api/asmr/tree", get(handlers::works::list_asmrone_tree))

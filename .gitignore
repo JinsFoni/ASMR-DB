@@ -33,3 +33,4 @@ npm-debug.log*
 *.exe
 *.msi
 dom_debug*.html
+.zcode/

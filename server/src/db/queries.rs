@@ -642,6 +642,30 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) -> Result<(), rusq
     Ok(())
 }
 
+/// 播放历史对应的作品（按最近播放时间倒序，去重到作品级）。返回 (作品, 是否还有更多)。
+pub fn list_play_history_works(
+    conn: &Connection,
+    page: i64,
+    per_page: i64,
+) -> Result<(Vec<Work>, bool), rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        r#"SELECT w.* FROM works w
+           JOIN (SELECT work_id, MAX(last_played_at) AS m FROM play_history GROUP BY work_id) ph
+             ON ph.work_id = w.id
+           ORDER BY ph.m DESC
+           LIMIT ?1 OFFSET ?2"#,
+    )?;
+    let rows = stmt
+        .query_map(params![per_page + 1, (page - 1) * per_page], row_to_work)?
+        .collect::<rusqlite::Result<Vec<Work>>>()?;
+    let has_more = rows.len() as i64 > per_page;
+    let mut rows = rows;
+    if has_more {
+        rows.truncate(per_page as usize);
+    }
+    Ok((rows, has_more))
+}
+
 // ============================= DLsite 排行榜 =============================
 
 /// 用新抓取的数据全量替换某个榜单周期的条目（fetched_at 重置为当前时间）。

@@ -9,6 +9,7 @@ import {
   Headphones,
   Trash2,
   Trophy,
+  AudioLines,
 } from "lucide-vue-next";
 import { useWorksStore } from "../../stores/works";
 import * as api from "../../lib/api";
@@ -102,6 +103,14 @@ function onStatusClick(status: string) {
         :class="route.path.startsWith('/dlsite') ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
       >
         <Trophy :size="16" /> DLsite
+      </RouterLink>
+
+      <RouterLink
+        to="/asmr"
+        class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors"
+        :class="route.path.startsWith('/asmr') ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
+      >
+        <AudioLines :size="16" /> ASMR ONE
       </RouterLink>
 
       <RouterLink

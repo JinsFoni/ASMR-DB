@@ -93,7 +93,12 @@ onUnmounted(() => {
         <div class="flex-1 flex flex-col min-w-0">
           <TopBar v-if="route.name !== 'player'" />
           <main class="flex-1 overflow-y-auto min-h-0">
-            <router-view />
+            <!-- 列表页（ASMR ONE / DLsite）用 KeepAlive 缓存：从详情页返回时保留 tab、数据与滚动位置 -->
+            <router-view v-slot="{ Component }">
+              <keep-alive :include="['AsmrOnlinePage', 'DlsitePage']">
+                <component :is="Component" />
+              </keep-alive>
+            </router-view>
           </main>
         </div>
       </div>

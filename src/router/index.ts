@@ -15,6 +15,16 @@ const router = createRouter({
       component: () => import("../routes/DlsitePage.vue"),
     },
     {
+      path: "/asmr",
+      name: "asmr",
+      component: () => import("../routes/AsmrOnlinePage.vue"),
+    },
+    {
+      path: "/asmr/work/:id",
+      name: "asmr-work-detail",
+      component: () => import("../routes/AsmrOnlineDetailPage.vue"),
+    },
+    {
       path: "/dlsite/work/:rj",
       name: "dlsite-work-detail",
       component: () => import("../routes/DlsiteDetailPage.vue"),

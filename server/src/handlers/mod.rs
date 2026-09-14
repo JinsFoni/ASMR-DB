@@ -1,3 +1,4 @@
+pub mod asmr;
 pub mod download;
 pub mod dlsite;
 pub mod events;
