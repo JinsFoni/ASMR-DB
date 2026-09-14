@@ -16,6 +16,7 @@ import type {
   AsmrOnlineWork,
   AsmrWorksPage,
   AsmrPlaylist,
+  TranslationListResponse,
 } from "./types";
 
 // ============================ HTTP 基础封装 ============================
@@ -308,9 +309,18 @@ export function getSettings(): Promise<{
   proxy_url: string | null;
   proxy_dlsite: boolean;
   proxy_asmrone: boolean;
+  proxy_llm: boolean;
   asmr_one_address: string | null;
   asmr_one_username: string | null;
   asmr_one_password: string | null;
+  llm_endpoint: string | null;
+  llm_api_key: string | null;
+  llm_model: string | null;
+  llm_max_retry: number;
+  llm_rps: number;
+  llm_threads: number;
+  llm_auto: boolean;
+  llm_prompt: string | null;
 }> {
   return get("/api/settings");
 }
@@ -326,8 +336,18 @@ export function clearAsmrToken(): Promise<void> {
 export function setSettings(
   theme?: string,
   downloadDir?: string,
-  proxy?: { url?: string; dlsite?: boolean; asmrone?: boolean },
-  asmr?: { address?: string; username?: string; password?: string }
+  proxy?: { url?: string; dlsite?: boolean; asmrone?: boolean; llm?: boolean },
+  asmr?: { address?: string; username?: string; password?: string },
+  llm?: {
+    endpoint?: string;
+    apiKey?: string;
+    model?: string;
+    maxRetry?: number;
+    rps?: number;
+    threads?: number;
+    auto?: boolean;
+    prompt?: string;
+  }
 ): Promise<void> {
   return post("/api/settings", {
     theme,
@@ -335,10 +355,41 @@ export function setSettings(
     proxyUrl: proxy?.url,
     proxyDlsite: proxy?.dlsite,
     proxyAsmrone: proxy?.asmrone,
+    proxyLlm: proxy?.llm,
     asmrOneAddress: asmr?.address,
     asmrOneUsername: asmr?.username,
     asmrOnePassword: asmr?.password,
+    llmEndpoint: llm?.endpoint,
+    llmApiKey: llm?.apiKey,
+    llmModel: llm?.model,
+    llmMaxRetry: llm?.maxRetry,
+    llmRps: llm?.rps,
+    llmThreads: llm?.threads,
+    llmAuto: llm?.auto,
+    llmPrompt: llm?.prompt,
   });
+}
+
+// ---------- LLM 翻译 ----------
+
+export function listTranslations(page: number): Promise<TranslationListResponse> {
+  return get(`/api/translations${qs({ page })}`);
+}
+
+export function enqueueTranslation(workId: number): Promise<{ ok: boolean; message: string }> {
+  return post("/api/translations/enqueue", { workId });
+}
+
+export function enqueueMissingTranslations(): Promise<{ ok: boolean; queued: number }> {
+  return post("/api/translations/enqueue-missing");
+}
+
+export function retryTranslation(id: number): Promise<{ ok: boolean }> {
+  return post(`/api/translations/${id}/retry`);
+}
+
+export function deleteTranslation(id: number): Promise<{ ok: boolean }> {
+  return del(`/api/translations/${id}`);
 }
 
 /** 使用账号密码登录 asmr.one，成功后服务端自动保存 Token（凭据不传时使用已保存的）。 */

@@ -80,14 +80,30 @@ pub async fn import_by_rj(
         let work_id = queries::upsert_work(&conn, &scraped).map_err(AppError::new)?;
         queries::set_work_actors(&conn, work_id, &scraped.actors).map_err(AppError::new)?;
         queries::set_work_auto_tags(&conn, work_id, &scraped.tags).map_err(AppError::new)?;
+        // 入库自动翻译：开关开启且有日文标题时自动入队
+        let mut auto_translated = false;
+        if queries::get_setting(&conn, "llm_auto").ok().flatten().is_some_and(|v| v == "1") {
+            let has_ja = scraped
+                .title_ja
+                .as_deref()
+                .is_some_and(|t| !t.trim().is_empty());
+            if has_ja {
+                queries::enqueue_translation(&conn, work_id).map_err(AppError::new)?;
+                auto_translated = true;
+            }
+        }
         queries::get_work(&conn, work_id)
             .map_err(AppError::new)?
+            .map(|v| (v, auto_translated))
             .ok_or_else(|| AppError("保存后未找到作品".to_string()))
     })
     .await
     .map_err(AppError::new)??;
+    let (view, auto_translated) = view;
 
-    Ok(Json(json!({ "ok": true, "work": view })))
+    Ok(Json(
+        json!({ "ok": true, "work": view, "autoTranslated": auto_translated })
+    ))
 }
 
 /// 只抓取元数据（不保存），用于导入前预览。

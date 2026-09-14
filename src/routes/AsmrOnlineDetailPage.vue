@@ -105,6 +105,7 @@ const fakeView = computed<WorkView>(() => {
       price: w?.price ?? null,
       sale_date: w?.release ?? null,
       description: w?.description ?? null,
+      description_zh: w?.description ?? null,
       age_class: null,
       duration_min: w?.duration_sec ? Math.round(w.duration_sec / 60) : null,
       file_size_mb: null,

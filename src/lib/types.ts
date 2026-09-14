@@ -17,6 +17,7 @@ export interface Work {
   duration_min: number | null;
   file_size_mb: number | null;
   dlsite_url: string | null;
+  description_zh: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -177,6 +178,29 @@ export interface AsmrPlaylist {
   works_count: number | null;
   main_cover_url: string | null;
   user_name: string | null;
+}
+
+export interface TranslationTask {
+  id: number;
+  work_id: number;
+  status: "pending" | "processing" | "success" | "failed";
+  rj_code: string | null;
+  title: string | null;
+  source_title: string | null;
+  translated_title: string | null;
+  source_desc: string | null;
+  translated_desc: string | null;
+  error: string | null;
+  retry_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface TranslationListResponse {
+  items: TranslationTask[];
+  page: number;
+  total: number;
+  totalPages: number;
 }
 
 export interface WorkListResponse {

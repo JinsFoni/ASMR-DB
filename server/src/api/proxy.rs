@@ -11,6 +11,7 @@ use rusqlite::Connection;
 pub enum ProxyTarget {
     Dlsite,
     AsmrOne,
+    Llm,
 }
 
 /// 代理配置：地址 + 每个站点是否启用。
@@ -20,6 +21,7 @@ pub struct ProxyConfig {
     pub url: Option<String>,
     pub dlsite: bool,
     pub asmrone: bool,
+    pub llm: bool,
 }
 
 impl ProxyConfig {
@@ -37,6 +39,7 @@ impl ProxyConfig {
             url: get("proxy_url"),
             dlsite: on("proxy_dlsite"),
             asmrone: on("proxy_asmrone"),
+            llm: on("proxy_llm"),
         }
     }
 
@@ -44,6 +47,7 @@ impl ProxyConfig {
         match target {
             ProxyTarget::Dlsite => self.dlsite,
             ProxyTarget::AsmrOne => self.asmrone,
+            ProxyTarget::Llm => self.llm,
         }
     }
 
@@ -101,6 +105,7 @@ fn target_name(t: ProxyTarget) -> &'static str {
     match t {
         ProxyTarget::Dlsite => "DLsite",
         ProxyTarget::AsmrOne => "asmr.one",
+        ProxyTarget::Llm => "LLM",
     }
 }
 
@@ -155,6 +160,7 @@ mod tests {
             url: Some(":::not a url".into()),
             dlsite: true,
             asmrone: false,
+            llm: false,
         };
         let client = cfg
             .apply_blocking(reqwest::blocking::Client::builder(), ProxyTarget::Dlsite)

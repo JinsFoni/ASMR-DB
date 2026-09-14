@@ -42,6 +42,7 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             duration_min    INTEGER,
             file_size_mb    REAL,
             dlsite_url      TEXT,
+            description_zh  TEXT,
             created_at      TEXT    DEFAULT (datetime('now')),
             updated_at      TEXT    DEFAULT (datetime('now'))
         );
@@ -218,7 +219,30 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_play_history_work_track
         ON play_history(work_id, track_id);
+
+        -- ==================== LLM 翻译任务表 ====================
+        -- 每部作品一个任务（work_id 唯一，重试/重译复用同一行）。
+        CREATE TABLE IF NOT EXISTS translation_tasks (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            work_id         INTEGER NOT NULL UNIQUE,
+            status          TEXT    NOT NULL DEFAULT 'pending',
+            source_title    TEXT,
+            translated_title TEXT,
+            source_desc     TEXT,
+            translated_desc TEXT,
+            error           TEXT,
+            retry_count     INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT    DEFAULT (datetime('now')),
+            updated_at      TEXT    DEFAULT (datetime('now')),
+            FOREIGN KEY (work_id) REFERENCES works(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_translation_tasks_status
+        ON translation_tasks(status);
         "#,
     )?;
+
+    // 旧库补列：works.description_zh（LLM 翻译的中文简介，已存在则忽略）
+    let _ = conn.execute("ALTER TABLE works ADD COLUMN description_zh TEXT", []);
+
     Ok(())
 }

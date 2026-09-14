@@ -28,6 +28,17 @@ pub struct SettingsResponse {
     pub asmr_one_address: Option<String>,
     pub asmr_one_username: Option<String>,
     pub asmr_one_password: Option<String>,
+    /// LLM 请求是否走代理
+    pub proxy_llm: bool,
+    /// LLM 翻译配置
+    pub llm_endpoint: Option<String>,
+    pub llm_api_key: Option<String>,
+    pub llm_model: Option<String>,
+    pub llm_max_retry: i64,
+    pub llm_rps: i64,
+    pub llm_threads: i64,
+    pub llm_auto: bool,
+    pub llm_prompt: Option<String>,
 }
 
 pub async fn get_settings(
@@ -56,6 +67,33 @@ pub async fn get_settings(
             asmr_one_address: queries::get_setting(&conn, "asmr_one_address").ok().flatten(),
             asmr_one_username: queries::get_setting(&conn, "asmr_one_username").ok().flatten(),
             asmr_one_password: queries::get_setting(&conn, "asmr_one_password").ok().flatten(),
+            proxy_llm: queries::get_setting(&conn, "proxy_llm")
+                .ok()
+                .flatten()
+                .is_some_and(|v| v == "1"),
+            llm_endpoint: queries::get_setting(&conn, "llm_endpoint").ok().flatten(),
+            llm_api_key: queries::get_setting(&conn, "llm_api_key").ok().flatten(),
+            llm_model: queries::get_setting(&conn, "llm_model").ok().flatten(),
+            llm_max_retry: queries::get_setting(&conn, "llm_max_retry")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
+            llm_rps: queries::get_setting(&conn, "llm_rps")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(2),
+            llm_threads: queries::get_setting(&conn, "llm_threads")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1),
+            llm_auto: queries::get_setting(&conn, "llm_auto")
+                .ok()
+                .flatten()
+                .is_some_and(|v| v == "1"),
+            llm_prompt: queries::get_setting(&conn, "llm_prompt").ok().flatten(),
         })
     })
     .await
@@ -71,9 +109,18 @@ pub struct SetSettingsBody {
     pub proxy_url: Option<String>,
     pub proxy_dlsite: Option<bool>,
     pub proxy_asmrone: Option<bool>,
+    pub proxy_llm: Option<bool>,
     pub asmr_one_address: Option<String>,
     pub asmr_one_username: Option<String>,
     pub asmr_one_password: Option<String>,
+    pub llm_endpoint: Option<String>,
+    pub llm_api_key: Option<String>,
+    pub llm_model: Option<String>,
+    pub llm_max_retry: Option<i64>,
+    pub llm_rps: Option<i64>,
+    pub llm_threads: Option<i64>,
+    pub llm_auto: Option<bool>,
+    pub llm_prompt: Option<String>,
 }
 
 pub async fn set_settings(
@@ -107,6 +154,36 @@ pub async fn set_settings(
         }
         if let Some(p) = body.asmr_one_password {
             queries::set_setting(&conn, "asmr_one_password", p.as_str()).map_err(AppError::new)?;
+        }
+        if let Some(b) = body.proxy_llm {
+            queries::set_setting(&conn, "proxy_llm", if b { "1" } else { "0" }).map_err(AppError::new)?;
+        }
+        if let Some(v) = body.llm_endpoint {
+            queries::set_setting(&conn, "llm_endpoint", v.trim()).map_err(AppError::new)?;
+        }
+        if let Some(v) = body.llm_api_key {
+            queries::set_setting(&conn, "llm_api_key", v.trim()).map_err(AppError::new)?;
+        }
+        if let Some(v) = body.llm_model {
+            queries::set_setting(&conn, "llm_model", v.trim()).map_err(AppError::new)?;
+        }
+        if let Some(v) = body.llm_max_retry {
+            queries::set_setting(&conn, "llm_max_retry", &v.clamp(0, 10).to_string())
+                .map_err(AppError::new)?;
+        }
+        if let Some(v) = body.llm_rps {
+            queries::set_setting(&conn, "llm_rps", &v.clamp(1, 100).to_string())
+                .map_err(AppError::new)?;
+        }
+        if let Some(v) = body.llm_threads {
+            queries::set_setting(&conn, "llm_threads", &v.clamp(1, 4).to_string())
+                .map_err(AppError::new)?;
+        }
+        if let Some(b) = body.llm_auto {
+            queries::set_setting(&conn, "llm_auto", if b { "1" } else { "0" }).map_err(AppError::new)?;
+        }
+        if let Some(v) = body.llm_prompt {
+            queries::set_setting(&conn, "llm_prompt", v.trim()).map_err(AppError::new)?;
         }
         Ok(())
     })

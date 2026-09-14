@@ -10,6 +10,7 @@ import {
   Trash2,
   Trophy,
   AudioLines,
+  Languages,
 } from "lucide-vue-next";
 import { useWorksStore } from "../../stores/works";
 import * as api from "../../lib/api";
@@ -135,6 +136,14 @@ function onStatusClick(status: string) {
         :class="route.path === '/downloads' ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
       >
         <Download :size="16" /> 下载管理
+      </RouterLink>
+
+      <RouterLink
+        to="/translate"
+        class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors"
+        :class="route.path === '/translate' ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
+      >
+        <Languages :size="16" /> 翻译
       </RouterLink>
 
       <RouterLink

@@ -21,6 +21,7 @@ pub fn row_to_work(row: &Row) -> rusqlite::Result<Work> {
         duration_min: row.get("duration_min")?,
         file_size_mb: row.get("file_size_mb")?,
         dlsite_url: row.get("dlsite_url")?,
+        description_zh: row.get("description_zh")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -202,7 +203,7 @@ pub fn upsert_work(conn: &Connection, w: &ScrapedWork) -> Result<i64, rusqlite::
             cover_url, work_type, price, sale_date, description, age_class, duration_min, file_size_mb, dlsite_url)
            VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
            ON CONFLICT(rj_code) DO UPDATE SET
-            title_ja=excluded.title_ja, title_zh=excluded.title_zh, title_en=excluded.title_en,
+            title_ja=excluded.title_ja, title_zh=COALESCE(excluded.title_zh, works.title_zh), title_en=excluded.title_en,
             circle_name=excluded.circle_name, circle_id=excluded.circle_id, cover_url=excluded.cover_url,
             work_type=excluded.work_type, price=excluded.price, sale_date=excluded.sale_date,
             description=excluded.description, age_class=excluded.age_class,
@@ -253,7 +254,7 @@ pub fn update_work(conn: &Connection, w: &Work) -> Result<(), rusqlite::Error> {
         r#"UPDATE works SET title_ja=?1, title_zh=?2, title_en=?3, circle_name=?4,
             cover_url=?5, work_type=?6, price=?7, sale_date=?8, description=?9,
             age_class=?10, duration_min=?11, file_size_mb=?12, dlsite_url=?13,
-            updated_at=datetime('now') WHERE id=?14"#,
+            description_zh=?14, updated_at=datetime('now') WHERE id=?15"#,
         params![
             w.title_ja,
             w.title_zh,
@@ -268,6 +269,7 @@ pub fn update_work(conn: &Connection, w: &Work) -> Result<(), rusqlite::Error> {
             w.duration_min,
             w.file_size_mb,
             w.dlsite_url,
+            w.description_zh,
             w.id,
         ],
     )?;
@@ -666,6 +668,148 @@ pub fn list_play_history_works(
     Ok((rows, has_more))
 }
 
+// ============================= LLM 翻译 =============================
+
+/// 写入作品的中文标题/简介（LLM 翻译结果）。
+pub fn set_work_translation(
+    conn: &Connection,
+    work_id: i64,
+    title_zh: Option<&str>,
+    description_zh: Option<&str>,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE works SET title_zh=COALESCE(?1, title_zh), description_zh=COALESCE(?2, description_zh),
+         updated_at=datetime('now') WHERE id=?3",
+        params![title_zh, description_zh, work_id],
+    )?;
+    Ok(())
+}
+
+/// 入队/重置某作品的翻译任务（每部作品一行，重复入队重置为排队）。
+pub fn enqueue_translation(
+    conn: &Connection,
+    work_id: i64,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        r#"INSERT INTO translation_tasks (work_id, status)
+           VALUES (?1, 'pending')
+           ON CONFLICT(work_id) DO UPDATE SET
+            status='pending', error=NULL, retry_count=0, updated_at=datetime('now')"#,
+        params![work_id],
+    )?;
+    Ok(())
+}
+
+/// 批量入队：所有缺少中文标题且有日文标题、且没有排队/进行中任务的作品。
+pub fn enqueue_missing_translations(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        r#"INSERT INTO translation_tasks (work_id, status)
+           SELECT id, 'pending' FROM works
+           WHERE (title_zh IS NULL OR TRIM(title_zh) = '')
+             AND title_ja IS NOT NULL AND TRIM(title_ja) != ''
+             AND id NOT IN (
+               SELECT work_id FROM translation_tasks WHERE status IN ('pending', 'processing')
+             )
+           ON CONFLICT(work_id) DO NOTHING"#,
+        [],
+    )
+}
+
+/// 分页列出翻译任务（JOIN works 取 RJ 号与当前标题）。
+pub fn list_translation_tasks(
+    conn: &Connection,
+    page: i64,
+    per_page: i64,
+) -> Result<(Vec<TranslationTask>, i64), rusqlite::Error> {
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM translation_tasks",
+        [],
+        |r| r.get(0),
+    )?;
+    let mut stmt = conn.prepare(
+        r#"SELECT t.id, t.work_id, t.status, t.source_title, t.translated_title,
+                  t.source_desc, t.translated_desc, t.error, t.retry_count,
+                  t.created_at, t.updated_at,
+                  w.rj_code, w.title_zh, w.title_ja
+           FROM translation_tasks t
+           LEFT JOIN works w ON w.id = t.work_id
+           ORDER BY t.updated_at DESC, t.id DESC
+           LIMIT ?1 OFFSET ?2"#,
+    )?;
+    let rows = stmt.query_map(params![per_page, (page - 1) * per_page], |row| {
+        let title_zh: Option<String> = row.get("title_zh")?;
+        let title_ja: Option<String> = row.get("title_ja")?;
+        let rj: Option<String> = row.get("rj_code")?;
+        Ok(TranslationTask {
+            id: row.get("id")?,
+            work_id: row.get("work_id")?,
+            status: row.get("status")?,
+            rj_code: rj.clone(),
+            title: title_zh.or(title_ja).or(rj),
+            source_title: row.get("source_title")?,
+            translated_title: row.get("translated_title")?,
+            source_desc: row.get("source_desc")?,
+            translated_desc: row.get("translated_desc")?,
+            error: row.get("error")?,
+            retry_count: row.get("retry_count")?,
+            created_at: row.get("created_at")?,
+            updated_at: row.get("updated_at")?,
+        })
+    })?;
+    let items = rows.collect::<rusqlite::Result<Vec<TranslationTask>>>()?;
+    Ok((items, total))
+}
+
+/// 重置任务为排队（重试）。
+pub fn retry_translation(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error> {
+    let n = conn.execute(
+        "UPDATE translation_tasks SET status='pending', error=NULL, updated_at=datetime('now') WHERE id=?1",
+        params![id],
+    )?;
+    Ok(n > 0)
+}
+
+/// 删除翻译任务记录。
+pub fn delete_translation(conn: &Connection, id: i64) -> Result<bool, rusqlite::Error> {
+    let n = conn.execute("DELETE FROM translation_tasks WHERE id=?1", params![id])?;
+    Ok(n > 0)
+}
+
+/// 进行中的任务数。
+pub fn count_processing_translations(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM translation_tasks WHERE status='processing'",
+        [],
+        |r| r.get(0),
+    )
+}
+
+/// 认领排队任务（置为进行中），返回 (任务id, 作品id) 列表。
+pub fn claim_pending_translations(
+    conn: &Connection,
+    limit: i64,
+) -> Result<Vec<(i64, i64)>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        r#"UPDATE translation_tasks SET status='processing', updated_at=datetime('now')
+           WHERE id IN (
+             SELECT id FROM translation_tasks WHERE status='pending' ORDER BY id LIMIT ?1
+           )
+           RETURNING id, work_id"#,
+    )?;
+    let rows = stmt.query_map(params![limit], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    rows.collect()
+}
+
+/// 启动恢复：把上次运行遗留的「进行中」任务重置为排队。
+pub fn reset_processing_translations(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "UPDATE translation_tasks SET status='pending', updated_at=datetime('now') WHERE status='processing'",
+        [],
+    )
+}
+
 // ============================= DLsite 排行榜 =============================
 
 /// 用新抓取的数据全量替换某个榜单周期的条目（fetched_at 重置为当前时间）。
@@ -800,7 +944,7 @@ mod tests {
                 work_type TEXT NOT NULL DEFAULT 'voice',
                 price INTEGER, sale_date TEXT, description TEXT,
                 age_class TEXT, duration_min INTEGER, file_size_mb REAL,
-                dlsite_url TEXT, created_at TEXT, updated_at TEXT
+                dlsite_url TEXT, description_zh TEXT, created_at TEXT, updated_at TEXT
             );
             CREATE TABLE tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, color TEXT DEFAULT '#888888', is_preset INTEGER DEFAULT 0);
             CREATE TABLE work_tags (work_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, is_auto INTEGER DEFAULT 0,

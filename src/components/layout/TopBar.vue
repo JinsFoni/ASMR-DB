@@ -25,6 +25,8 @@ const title = computed(() => {
       return "➕ 导入作品";
     case "downloads":
       return "⬇️ 下载管理";
+    case "translate":
+      return "🌍 翻译";
     case "settings":
       return "⚙️ 设置";
     case "work-detail":

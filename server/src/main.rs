@@ -77,6 +77,11 @@ async fn main() {
     };
     println!("📦 数据库: {}", db_path.display());
 
+    // 启动恢复：上次运行遗留的「进行中」翻译任务重置为排队
+    if let Err(e) = db::queries::reset_processing_translations(&conn) {
+        eprintln!("⚠️ 翻译任务启动恢复失败: {e}");
+    }
+
     let dist_dir = resolve_dist_dir();
     if !dist_dir.join("index.html").is_file() {
         eprintln!(
@@ -131,6 +136,9 @@ async fn main() {
     let static_service = ServeDir::new(&dist_dir)
         .append_index_html_on_directories(true)
         .not_found_service(ServeFile::new(dist_dir.join("index.html")));
+
+    // LLM 翻译调度器（在 state 被 Router 消耗前克隆一份）
+    let scheduler_state = state.clone();
 
     let app = Router::new()
         // ============ 作品 ============
@@ -195,6 +203,27 @@ async fn main() {
         .route(
             "/api/dlsite/ranking/refresh",
             post(handlers::dlsite::refresh_ranking),
+        )
+        // ============ LLM 翻译 ============
+        .route(
+            "/api/translations",
+            get(handlers::translation::list_translations),
+        )
+        .route(
+            "/api/translations/enqueue",
+            post(handlers::translation::enqueue),
+        )
+        .route(
+            "/api/translations/enqueue-missing",
+            post(handlers::translation::enqueue_missing),
+        )
+        .route(
+            "/api/translations/{id}/retry",
+            post(handlers::translation::retry),
+        )
+        .route(
+            "/api/translations/{id}",
+            delete(handlers::translation::delete_task),
         )
         // ============ ASMR ONE 在线浏览 ============
         .route(
@@ -282,6 +311,9 @@ async fn main() {
         .fallback_service(static_service)
         .layer(CorsLayer::permissive())
         .with_state(state);
+
+    // LLM 翻译调度器
+    handlers::translation::spawn_scheduler(scheduler_state);
 
     let host = std::env::var("ASMR_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
     let port: u16 = std::env::var("ASMR_PORT")

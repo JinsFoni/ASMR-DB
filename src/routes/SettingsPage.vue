@@ -15,6 +15,7 @@ import {
   HardDriveDownload,
   HardDriveUpload,
   Globe,
+  Languages,
 } from "lucide-vue-next";
 import * as api from "../lib/api";
 import FolderPickerModal from "../components/common/FolderPickerModal.vue";
@@ -37,8 +38,21 @@ const hasAsmrToken = computed(() => asmrToken.value.trim().length > 0);
 const proxyUrl = ref("");
 const proxyDlsite = ref(false);
 const proxyAsmrone = ref(false);
+const proxyLlm = ref(false);
 const proxySaved = ref(false);
 const proxySaving = ref(false);
+
+// LLM 翻译
+const llmEndpoint = ref("");
+const llmApiKey = ref("");
+const llmModel = ref("");
+const llmMaxRetry = ref(3);
+const llmRps = ref(2);
+const llmThreads = ref(1);
+const llmAuto = ref(false);
+const llmPrompt = ref("");
+const llmSaved = ref(false);
+const llmSaving = ref(false);
 
 // asmr.one 站点配置（地址 / 账号 / 密码，登录成功后 Token 自动保存）
 const asmrAddress = ref("");
@@ -66,6 +80,15 @@ onMounted(async () => {
   asmrAddress.value = s.asmr_one_address || "";
   asmrUsername.value = s.asmr_one_username || "";
   asmrPassword.value = s.asmr_one_password || "";
+  proxyLlm.value = s.proxy_llm;
+  llmEndpoint.value = s.llm_endpoint || "";
+  llmApiKey.value = s.llm_api_key || "";
+  llmModel.value = s.llm_model || "";
+  llmMaxRetry.value = s.llm_max_retry;
+  llmRps.value = s.llm_rps;
+  llmThreads.value = s.llm_threads;
+  llmAuto.value = s.llm_auto;
+  llmPrompt.value = s.llm_prompt || "";
 });
 
 function selectTheme(t: ThemeName) {
@@ -101,6 +124,7 @@ async function saveProxy() {
       url: proxyUrl.value.trim(),
       dlsite: proxyDlsite.value,
       asmrone: proxyAsmrone.value,
+      llm: proxyLlm.value,
     });
     proxySaved.value = true;
     setTimeout(() => (proxySaved.value = false), 1500);
@@ -108,6 +132,29 @@ async function saveProxy() {
     alert(`保存失败：${e}`);
   } finally {
     proxySaving.value = false;
+  }
+}
+
+/** 保存 LLM 翻译配置（对新发起的翻译任务生效） */
+async function saveLlm() {
+  llmSaving.value = true;
+  try {
+    await api.setSettings(undefined, undefined, undefined, undefined, {
+      endpoint: llmEndpoint.value.trim(),
+      apiKey: llmApiKey.value.trim(),
+      model: llmModel.value.trim(),
+      maxRetry: Number(llmMaxRetry.value) || 3,
+      rps: Number(llmRps.value) || 2,
+      threads: Number(llmThreads.value) || 1,
+      auto: llmAuto.value,
+      prompt: llmPrompt.value,
+    });
+    llmSaved.value = true;
+    setTimeout(() => (llmSaved.value = false), 1500);
+  } catch (e) {
+    alert(`保存失败：${e}`);
+  } finally {
+    llmSaving.value = false;
   }
 }
 
@@ -375,6 +422,102 @@ function handleDirPicked(dir: string) {
             />
           </button>
         </label>
+        <label class="flex items-center justify-between cursor-pointer select-none">
+          <span class="text-xs text-white/80">LLM 请求走代理</span>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="proxyLlm"
+            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
+            :class="proxyLlm ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
+            @click="proxyLlm = !proxyLlm"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+              :class="proxyLlm ? 'translate-x-4' : ''"
+            />
+          </button>
+        </label>
+      </div>
+    </section>
+
+    <!-- LLM 翻译 -->
+    <section class="card p-4">
+      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
+        <Languages :size="14" class="text-accent" /> LLM 翻译
+      </h3>
+      <p class="text-[11px] text-muted mb-3">
+        使用 OpenAI 兼容接口把作品的日文标题/简介翻译成简体中文。API 端点填服务地址（如
+        <code class="text-accent">https://api.deepseek.com/v1</code>，兼容 one-api、本地 Ollama 等）。
+      </p>
+      <div class="space-y-2">
+        <input
+          v-model="llmEndpoint"
+          class="input w-full !text-xs font-mono"
+          placeholder="API 端点，如 https://api.deepseek.com/v1"
+        />
+        <div class="flex gap-2">
+          <input
+            v-model="llmApiKey"
+            type="password"
+            class="input flex-1 !text-xs font-mono"
+            placeholder="API 密钥"
+            autocomplete="new-password"
+          />
+          <input
+            v-model="llmModel"
+            class="input flex-1 !text-xs font-mono"
+            placeholder="模型，如 deepseek-chat"
+          />
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="text-[10px] text-muted">
+            最大重试次数
+            <input v-model.number="llmMaxRetry" type="number" min="0" max="10" class="input w-full !text-xs mt-0.5" />
+          </label>
+          <label class="text-[10px] text-muted">
+            每秒请求上限
+            <input v-model.number="llmRps" type="number" min="1" max="100" class="input w-full !text-xs mt-0.5" />
+          </label>
+          <label class="text-[10px] text-muted">
+            翻译线程数（1-4）
+            <input v-model.number="llmThreads" type="number" min="1" max="4" class="input w-full !text-xs mt-0.5" />
+          </label>
+        </div>
+        <label class="flex items-center justify-between cursor-pointer select-none pt-1">
+          <span class="text-xs text-white/80">入库自动翻译（作品入库后自动加入翻译队列）</span>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="llmAuto"
+            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
+            :class="llmAuto ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
+            @click="llmAuto = !llmAuto"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+              :class="llmAuto ? 'translate-x-4' : ''"
+            />
+          </button>
+        </label>
+        <label class="text-[10px] text-muted block">
+          翻译 Prompt（留空使用系统默认）
+          <textarea
+            v-model="llmPrompt"
+            rows="3"
+            class="w-full rounded-lg bg-bg-hover border border-bg-border px-3 py-2 text-xs text-white font-mono resize-none outline-none focus:border-accent/60 mt-0.5"
+            :placeholder="llmPrompt || '留空使用系统默认 Prompt'"
+          ></textarea>
+        </label>
+      </div>
+      <div class="flex items-center gap-3 mt-3">
+        <span class="text-[11px] text-muted">保存后对新发起的翻译任务生效</span>
+        <div class="flex-1" />
+        <button class="btn-primary !text-xs" :disabled="llmSaving" @click="saveLlm">
+          <Check v-if="!llmSaved" :size="13" />
+          <Loader2 v-else :size="13" class="animate-spin" />
+          {{ llmSaved ? "已保存" : "保存配置" }}
+        </button>
       </div>
     </section>
 

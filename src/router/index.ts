@@ -50,6 +50,11 @@ const router = createRouter({
       component: () => import("../routes/DownloadsPage.vue"),
     },
     {
+      path: "/translate",
+      name: "translate",
+      component: () => import("../routes/TranslatePage.vue"),
+    },
+    {
       path: "/settings",
       name: "settings",
       component: () => import("../routes/SettingsPage.vue"),

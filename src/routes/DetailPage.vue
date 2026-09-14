@@ -16,6 +16,7 @@ import {
   Music,
   Monitor,
   Headphones,
+  Languages,
 } from "lucide-vue-next";
 import * as api from "../lib/api";
 import type { WorkView, Track, AsmrTreeNode, AsmrDownloadFile } from "../lib/types";
@@ -40,6 +41,7 @@ const loading = ref(true);
 const copied = ref(false);
 const scanningTracks = ref(false);
 const onlineLoading = ref(false);
+const translating = ref(false);
 
 // 下载链接输入
 const showUrlInput = ref(false);
@@ -149,6 +151,20 @@ async function handleFolderPicked(dir: string) {
     worksStore.loadGroups();
   } catch (e) {
     alert(`关联失败: ${e}`);
+  }
+}
+
+/** LLM 翻译：把作品的日文标题/简介加入翻译队列 */
+async function translateWork() {
+  if (!view.value || translating.value) return;
+  translating.value = true;
+  try {
+    const res = await api.enqueueTranslation(view.value.work.id);
+    alert(res.message || "已加入翻译队列");
+  } catch (e) {
+    alert(`加入翻译队列失败: ${e}`);
+  } finally {
+    translating.value = false;
   }
 }
 
@@ -317,6 +333,11 @@ function onTagsUpdated() {
           <button class="btn-ghost" @click="bindLocal" title="选择本地已有文件夹并自动匹配分组与音轨">
             <FolderPlus :size="14" /> 关联本地
           </button>
+          <button class="btn-outline" :disabled="translating" title="用 LLM 把日文标题/简介翻译成简体中文" @click="translateWork">
+            <Loader2 v-if="translating" :size="14" class="animate-spin" />
+            <Languages v-else :size="14" />
+            LLM 翻译
+          </button>
           <button class="btn-ghost" @click="openDlsite">
             <Globe :size="14" /> DLsite 页面
           </button>
@@ -357,11 +378,17 @@ function onTagsUpdated() {
       </div>
     </div>
 
-    <!-- 简介 -->
-    <div v-if="view.work.description" class="card p-4">
-      <div class="text-xs font-semibold text-white mb-2">📝 简介</div>
+    <!-- 简介（LLM 翻译结果优先） -->
+    <div v-if="view.work.description_zh || view.work.description" class="card p-4">
+      <div class="text-xs font-semibold text-white mb-2 flex items-center gap-2">
+        📝 简介
+        <span
+          v-if="view.work.description_zh"
+          class="px-1.5 py-0.5 rounded text-[9px] bg-accent/15 text-accent-light font-normal"
+        >中文翻译</span>
+      </div>
       <p class="text-xs text-muted leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto">
-        {{ view.work.description }}
+        {{ view.work.description_zh || view.work.description }}
       </p>
     </div>
 

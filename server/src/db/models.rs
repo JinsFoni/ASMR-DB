@@ -19,6 +19,7 @@ pub struct Work {
     pub duration_min: Option<i64>,
     pub file_size_mb: Option<f64>,
     pub dlsite_url: Option<String>,
+    pub description_zh: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -129,10 +130,29 @@ pub struct ScrapedWork {
     pub tags: Vec<String>,
 }
 
+/// LLM 翻译任务（对应 translation_tasks 表，含联表展示字段）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TranslationTask {
+    pub id: i64,
+    pub work_id: i64,
+    /// pending 排队 / processing 进行中 / success 成功 / failed 失败
+    pub status: String,
+    pub rj_code: Option<String>,
+    /// 当前作品标题（title_zh || title_ja || rj）
+    pub title: Option<String>,
+    pub source_title: Option<String>,
+    pub translated_title: Option<String>,
+    pub source_desc: Option<String>,
+    pub translated_desc: Option<String>,
+    pub error: Option<String>,
+    pub retry_count: i64,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
 /// DLsite 排行榜单条（抓取结果，入库前）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RankingEntry {
-    pub rank: i64,
+pub struct RankingEntry {    pub rank: i64,
     pub rj_code: String,
     pub title: Option<String>,
     pub circle_name: Option<String>,
