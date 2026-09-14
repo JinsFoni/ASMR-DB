@@ -1,0 +1,25 @@
+services:
+  asmr-db:
+    # ghcr.io/jinsfoni/asmr-db（由 GitHub Actions 构建并推送）
+    # 也可本地构建：docker compose up -d --build
+    image: ghcr.io/jinsfoni/asmr-db:latest
+    container_name: asmr-db
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "1421:1421"
+    environment:
+      # 服务监听地址与端口（容器内）
+      ASMR_HOST: 0.0.0.0
+      ASMR_PORT: 1421
+      ASMR_DB_DIR: /data
+      ASMR_DIST_DIR: /app/dist
+      # 时区
+      TZ: Asia/Shanghai
+    volumes:
+      # SQLite 数据库（dlsite_manager.db）持久化目录
+      - ./data:/data
+      # 下载目录：在 Web 设置页将下载目录设为 /downloads
+      - ./downloads:/downloads
