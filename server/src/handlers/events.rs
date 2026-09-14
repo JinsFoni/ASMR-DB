@@ -6,7 +6,7 @@ use futures::stream::Stream;
 
 use crate::state::SharedState;
 
-/// 下载进度 SSE 事件流（替代桌面端 Tauri 事件）。
+/// 下载进度 SSE 事件流。
 /// 事件名 `download-progress`，data 为 camelCase JSON。
 pub async fn events(
     State(state): State<SharedState>,

@@ -12,7 +12,7 @@ pub struct ListQuery {
     pub path: Option<String>,
 }
 
-/// 浏览服务器上的目录（替代桌面端原生目录选择对话框）。
+/// 浏览服务器上的目录,供前端选择本地文件夹。
 /// 仅返回子目录；path 为空时从用户主目录开始。
 pub async fn list_dir(
     State(_state): State<SharedState>,

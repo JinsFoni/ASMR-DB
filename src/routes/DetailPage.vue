@@ -133,7 +133,7 @@ async function scanTracks() {
   }
 }
 
-// 目录选择器（服务端目录浏览，替代桌面端原生选择框）
+// 目录选择器（服务端目录浏览）
 const showFolderPicker = ref(false);
 
 async function bindLocal() {

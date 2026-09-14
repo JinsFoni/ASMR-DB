@@ -464,7 +464,7 @@ export function refreshDlsiteRanking(term?: string): Promise<{ ok: boolean; refr
   return post("/api/dlsite/ranking/refresh", term ? { term } : {});
 }
 
-// ---------- 目录浏览（替代桌面端原生目录选择框） ----------
+// ---------- 服务端目录浏览 ----------
 
 export interface DirEntry {
   name: string;
