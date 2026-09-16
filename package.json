@@ -9,6 +9,7 @@
     "dev:server": "cargo run --manifest-path server/Cargo.toml",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "node --test tests/*.test.ts",
     "start": "npm run build && cargo run --release --manifest-path server/Cargo.toml"
   },
   "dependencies": {
