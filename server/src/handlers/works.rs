@@ -61,6 +61,25 @@ pub async fn get_work(
     Ok(Json(view))
 }
 
+/// 按 RJ 号查本地作品（大小写不敏感）。未入库返回 `null`。
+/// DLsite / ASMR ONE 详情页用它获取本地状态（下载状态、音轨数、标签、分组）。
+pub async fn get_work_by_rj(
+    State(state): State<SharedState>,
+    Path(rj): Path<String>,
+) -> Result<Json<Option<WorkView>>, AppError> {
+    let view = tokio::task::spawn_blocking(move || -> Result<Option<WorkView>, AppError> {
+        let conn = state.db.get().map_err(AppError::new)?;
+        let work = queries::get_work_by_rj(&conn, &rj).map_err(AppError::new)?;
+        match work {
+            Some(w) => Ok(Some(queries::work_view(&conn, w).map_err(AppError::new)?)),
+            None => Ok(None),
+        }
+    })
+    .await
+    .map_err(AppError::new)??;
+    Ok(Json(view))
+}
+
 pub async fn update_work(
     State(state): State<SharedState>,
     Json(work): Json<Work>,

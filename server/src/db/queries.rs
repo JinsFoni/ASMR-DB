@@ -1109,4 +1109,37 @@ mod tests {
         assert!(!rankings_stale(&conn, &["day"], 4).unwrap());
         assert!(rankings_stale(&conn, &["day", "week"], 4).unwrap());
     }
+
+    #[test]
+    fn test_work_view_by_rj_lookup() {
+        let conn = test_conn();
+        let wid = insert_work(&conn, "RJ123456");
+        conn.execute(
+            "INSERT INTO local_files (work_id, local_path, download_status) VALUES (?1, '/tmp/a', 'downloaded')",
+            params![wid],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO audio_tracks (work_id, file_path, duration_sec) VALUES (?1, '/tmp/a/01.mp3', 30.0)",
+            params![wid],
+        )
+        .unwrap();
+
+        // 组合方式：get_work_by_rj 取 Work，再交给 work_view 组装完整视图
+        let view = get_work_by_rj(&conn, "RJ123456")
+            .unwrap()
+            .map(|w| work_view(&conn, w).unwrap())
+            .unwrap();
+        assert_eq!(view.work.id, wid);
+        assert_eq!(view.download_status, "downloaded");
+        assert_eq!(view.track_count, 1);
+        assert_eq!(view.total_duration_sec, 30.0);
+
+        // 大小写不敏感
+        let lower = get_work_by_rj(&conn, "rj123456").unwrap();
+        assert!(lower.is_some(), "RJ 号查询应大小写不敏感");
+
+        // 未入库返回 None
+        assert!(get_work_by_rj(&conn, "RJ999999").unwrap().is_none());
+    }
 }

@@ -158,6 +158,10 @@ async fn main() {
         .route("/api/works", get(handlers::works::list_works))
         .route("/api/works/delete-batch", post(handlers::works::delete_works))
         .route("/api/works", put(handlers::works::update_work))
+        .route(
+            "/api/works/by-rj/{rj}",
+            get(handlers::works::get_work_by_rj),
+        )
         .route("/api/works/{id}", get(handlers::works::get_work))
         .route("/api/works/{id}", delete(handlers::works::delete_work))
         .route(
