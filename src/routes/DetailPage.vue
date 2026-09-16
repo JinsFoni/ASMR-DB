@@ -43,6 +43,11 @@ const scanningTracks = ref(false);
 const onlineLoading = ref(false);
 const translating = ref(false);
 
+// asmr.one 在线音频（本地无音轨时作为音轨卡片的数据源）
+const onlineTracks = ref<Track[]>([]);
+const onlineTree = ref<AsmrTreeNode[] | null>(null);
+const onlineTracksLoading = ref(false);
+
 // 下载链接输入
 const showUrlInput = ref(false);
 const dlUrl = ref("");
@@ -58,11 +63,68 @@ async function load() {
     view.value = await api.getWork(workId);
     if (view.value) {
       tracks.value = await api.listTracks(workId);
+      // 本地有音轨就只显示本地的；没有才去查 asmr.one
+      if (tracks.value.length) {
+        onlineTracks.value = [];
+        onlineTree.value = null;
+      } else {
+        await loadOnlineTracks();
+      }
     }
   } finally {
     loading.value = false;
   }
 }
+
+/**
+ * 拉取 asmr.one 的音频列表与完整文件树（仅在本地音轨为空时调用）。
+ * 未配置 Token 或接口报错时静默降级，音轨卡片维持「暂无音轨」文案。
+ */
+async function loadOnlineTracks() {
+  const rj = view.value?.work.rj_code;
+  onlineTracks.value = [];
+  onlineTree.value = null;
+  if (!rj) return;
+  try {
+    const s = await api.getSettings();
+    if (!s.asmr_one_token) return;
+  } catch {
+    return;
+  }
+  onlineTracksLoading.value = true;
+  try {
+    const [t, tree] = await Promise.all([
+      api.listAsmroneTracks(rj),
+      api.listAsmroneTree(rj).catch(() => null),
+    ]);
+    onlineTracks.value = t;
+    onlineTree.value = tree;
+  } catch {
+    onlineTracks.value = [];
+    onlineTree.value = null;
+  } finally {
+    onlineTracksLoading.value = false;
+  }
+}
+
+/** 本地无音轨且 asmr.one 有音频 → 音轨卡片展示在线音频（与 ASMR ONE 详情页一致） */
+const showOnlineTracks = computed(
+  () => tracks.value.length === 0 && onlineTracks.value.length > 0
+);
+
+/**
+ * 传给 TrackList 的作品信息：在线展示时改用在线音轨数与总时长，
+ * 但保留真实 work.id，使「当前播放」高亮仍能匹配。
+ */
+const trackListView = computed<WorkView>(() => {
+  const v = view.value as WorkView;
+  if (!showOnlineTracks.value) return v;
+  return {
+    ...v,
+    track_count: onlineTracks.value.length,
+    total_duration_sec: onlineTracks.value.reduce((s, t) => s + (t.duration_sec || 0), 0),
+  };
+});
 
 onMounted(load);
 
@@ -392,8 +454,19 @@ function onTagsUpdated() {
       </p>
     </div>
 
-    <!-- 音轨 -->
-    <TrackList :tracks="tracks" :work="view" />
+    <!-- 音轨：本地优先；本地无音轨而 asmr.one 有该作品时，展示在线音频 -->
+    <div v-if="onlineTracksLoading" class="card p-6 flex items-center justify-center text-muted">
+      <Loader2 :size="18" class="animate-spin" />
+      <span class="text-xs ml-2">正在获取 asmr.one 音轨列表…</span>
+    </div>
+    <TrackList
+      v-else-if="showOnlineTracks"
+      :tracks="onlineTracks"
+      :work="trackListView"
+      online
+      :tree="onlineTree"
+    />
+    <TrackList v-else :tracks="tracks" :work="trackListView" />
 
     <!-- asmr.one 文件树下载选择器 Modal -->
     <AsmrFileTree

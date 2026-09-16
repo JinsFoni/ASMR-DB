@@ -34,3 +34,7 @@ npm-debug.log*
 *.msi
 dom_debug*.html
 .zcode/
+
+# local dev artifacts
+.run/
+.playwright-cli/
