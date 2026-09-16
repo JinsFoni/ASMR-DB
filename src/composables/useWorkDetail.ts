@@ -199,6 +199,8 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
 
   /** spec §8：asmr 模式用在线音轨数与总时长，但保留真实 work.id 供高亮匹配 */
   const view = computed<WorkView | null>(() => {
+    // DLsite 页在 dlsite 模式下不渲染音轨卡片（保持该页现状）；作品库则显示「暂无音轨」
+    if (opts.source === "dlsite" && mode.value === "dlsite") return null;
     if (opts.source === "work" && localView.value) {
       if (mode.value === "local") return localView.value;
       return {
