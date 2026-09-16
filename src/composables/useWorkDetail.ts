@@ -1,0 +1,592 @@
+import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
+import { useRouter } from "vue-router";
+import * as api from "../lib/api";
+import type { AsmrDownloadFile, AsmrOnlineWork, AsmrTreeNode, ScrapedWork, Tag, Track, Work, WorkView } from "../lib/types";
+import {
+  actionLabel,
+  actionVariant,
+  buildFakeWork,
+  buildMeta,
+  buildWorkView,
+  resolveActions,
+  resolveMode,
+  resolveStatusBadge,
+  tagsFromNames,
+  type ActionKey,
+  type DetailAction,
+  type DetailMode,
+  type DetailSource,
+  type MetaItem,
+  type StatusBadge,
+} from "../lib/workDetail";
+import { usePlayerStore } from "../stores/player";
+import { useWorksStore } from "../stores/works";
+import { useDownloadStore } from "../stores/download";
+
+export interface UseWorkDetail {
+  loading: Ref<boolean>;
+  error: Ref<string>;
+  mode: ComputedRef<DetailMode>;
+  hasOnline: Ref<boolean>;
+  /** 本地 WorkView（未入库为 null） */
+  localView: Ref<WorkView | null>;
+  /** 归一化后的统一视图（供 TrackList / 播放器使用） */
+  view: ComputedRef<WorkView | null>;
+  title: ComputedRef<string>;
+  subtitle: ComputedRef<string | null>;
+  rjCode: ComputedRef<string | null>;
+  coverUrl: ComputedRef<string | null>;
+  statusBadge: ComputedRef<StatusBadge>;
+  meta: ComputedRef<MetaItem[]>;
+  actors: ComputedRef<string[]>;
+  tags: ComputedRef<Tag[]>;
+  editableTags: ComputedRef<boolean>;
+  workId: ComputedRef<number | null>;
+  description: ComputedRef<string | null>;
+  descriptionNote: ComputedRef<string | null>;
+  descriptionLoading: Ref<boolean>;
+  actions: ComputedRef<DetailAction[]>;
+  localTracks: Ref<Track[]>;
+  onlineTracks: Ref<Track[]>;
+  fileTree: Ref<AsmrTreeNode[] | null>;
+  displayTracks: ComputedRef<Track[]>;
+  tracksLoading: Ref<boolean>;
+  /** asmr.one 文件树拉取中（与 tracksLoading 分离，避免拉树时隐藏音轨列表） */
+  treeLoading: Ref<boolean>;
+  /** 主数据不存在（如 /work/999） */
+  notFound: ComputedRef<boolean>;
+  copied: Ref<boolean>;
+  showFileTree: Ref<boolean>;
+  showFolderPicker: Ref<boolean>;
+  /** DLsite 压缩包直链输入框（作品库「下载」） */
+  showUrlInput: Ref<boolean>;
+  dlUrl: Ref<string>;
+  busyKey: Ref<ActionKey | null>;
+  copiedReset: () => void;
+  reload: () => Promise<void>;
+  runAction: (key: ActionKey) => Promise<void>;
+  onFileTreeDownload: (files: AsmrDownloadFile[]) => Promise<void>;
+  onFolderPicked: (dir: string) => Promise<void>;
+  onTagsUpdated: () => void;
+}
+
+export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): UseWorkDetail {
+  const router = useRouter();
+  const player = usePlayerStore();
+  const worksStore = useWorksStore();
+  const downloadStore = useDownloadStore();
+
+  const loading = ref(true);
+  const error = ref("");
+  const copied = ref(false);
+
+  // 主数据（按 source 三选一）
+  const localView = ref<WorkView | null>(null);
+  const asmrWork = ref<AsmrOnlineWork | null>(null);
+  const scrapedWork = ref<ScrapedWork | null>(null);
+  const dlsiteDescription = ref("");
+  const descriptionLoading = ref(false);
+
+  const hasOnline = ref(false);
+  const localTracks = ref<Track[]>([]);
+  const onlineTracks = ref<Track[]>([]);
+  const fileTree = ref<AsmrTreeNode[] | null>(null);
+  const tracksLoading = ref(false);
+  const treeLoading = ref(false);
+  const busyKey = ref<ActionKey | null>(null);
+
+  const showFileTree = ref(false);
+  const showFolderPicker = ref(false);
+  const showUrlInput = ref(false);
+  const dlUrl = ref("");
+
+  const rjCode = computed<string | null>(
+    () => localView.value?.work.rj_code ?? asmrWork.value?.rj_code ?? scrapedWork.value?.rj_code ?? null
+  );
+
+  const hasLocalWork = computed(() => localView.value != null);
+
+  /** spec §2.2 模式判定 */
+  const mode = computed<DetailMode>(() =>
+    resolveMode({
+      source: opts.source,
+      hasOnline: hasOnline.value,
+      localTrackCount: localTracks.value.length,
+    })
+  );
+
+  const rawWork = computed<Work | null>(() => {
+    if (localView.value) return localView.value.work;
+    if (asmrWork.value || scrapedWork.value) {
+      return buildFakeWork(opts.source, opts.id.value, asmrWork.value, scrapedWork.value);
+    }
+    return null;
+  });
+
+  const title = computed(
+    () =>
+      localView.value?.work.title_zh ||
+      localView.value?.work.title_ja ||
+      asmrWork.value?.title ||
+      scrapedWork.value?.title_zh ||
+      scrapedWork.value?.title_ja ||
+      rjCode.value ||
+      `#${opts.id.value}`
+  );
+
+  const subtitle = computed<string | null>(() => {
+    const ja = rawWork.value?.title_ja ?? null;
+    return ja && ja !== title.value ? ja : null;
+  });
+
+  const coverUrl = computed<string | null>(() => rawWork.value?.cover_url ?? null);
+
+  // 仅非作品库页的已入库作品，角标才可点击跳本地详情（作品库页自身即本地详情）
+  const statusBadge = computed<StatusBadge>(() =>
+    resolveStatusBadge(
+      localView.value?.download_status ?? "not_downloaded",
+      hasLocalWork.value,
+      opts.source !== "work" && hasLocalWork.value
+    )
+  );
+
+  const meta = computed<MetaItem[]>(() =>
+    rawWork.value
+      ? buildMeta(opts.source, rawWork.value, asmrWork.value?.rating, asmrWork.value?.rate_count)
+      : []
+  );
+
+  const actors = computed<string[]>(
+    () => localView.value?.actors ?? asmrWork.value?.vas ?? scrapedWork.value?.actors ?? []
+  );
+
+  /**
+   * 标签：已入库时用本地标签（作品库单一来源，含用户编辑）；
+   * 未入库时用来源自身的标签名（asmr.one / DLsite），转为只读 Tag 形态。
+   */
+  const tags = computed<Tag[]>(() => {
+    if (localView.value) return localView.value.tags;
+    if (opts.source === "asmr") return tagsFromNames(asmrWork.value?.tags ?? []);
+    if (opts.source === "dlsite") return tagsFromNames(scrapedWork.value?.tags ?? []);
+    return [];
+  });
+
+  const editableTags = computed(() => opts.source === "work" && localView.value != null);
+
+  const workId = computed<number | null>(() => localView.value?.work.id ?? null);
+
+  const description = computed<string | null>(() => {
+    if (opts.source === "work") {
+      return localView.value?.work.description_zh ?? localView.value?.work.description ?? null;
+    }
+    return asmrWork.value?.description ?? scrapedWork.value?.description ?? dlsiteDescription.value ?? null;
+  });
+
+  const descriptionNote = computed<string | null>(() => {
+    if (opts.source === "work") {
+      return localView.value?.work.description_zh ? "中文翻译" : null;
+    }
+    if (opts.source === "asmr") {
+      return !asmrWork.value?.description && dlsiteDescription.value ? "（来自 DLsite）" : null;
+    }
+    return null;
+  });
+
+  /** spec §8：local → 本地音轨；asmr → 在线音轨；dlsite → 空 */
+  const displayTracks = computed<Track[]>(() =>
+    mode.value === "local" ? localTracks.value : mode.value === "asmr" ? onlineTracks.value : []
+  );
+
+  /** spec §8：asmr 模式用在线音轨数与总时长，但保留真实 work.id 供高亮匹配 */
+  const view = computed<WorkView | null>(() => {
+    if (opts.source === "work" && localView.value) {
+      if (mode.value === "local") return localView.value;
+      return {
+        ...localView.value,
+        track_count: onlineTracks.value.length,
+        total_duration_sec: onlineTracks.value.reduce((s, t) => s + (t.duration_sec || 0), 0),
+      };
+    }
+    const w = rawWork.value;
+    if (!w) return null;
+    return buildWorkView(
+      w,
+      tags.value,
+      actors.value,
+      localView.value,
+      displayTracks.value.length,
+      displayTracks.value.reduce((s, t) => s + (t.duration_sec || 0), 0)
+    );
+  });
+
+  const actions = computed<DetailAction[]>(() => {
+    const keys = resolveActions({
+      source: opts.source,
+      mode: mode.value,
+      hasOnline: hasOnline.value,
+      hasLocalWork: hasLocalWork.value,
+      hasRj: rjCode.value != null,
+    });
+    return keys.map((key, i) => ({
+      key,
+      label: actionLabel(key, opts.source),
+      variant: actionVariant(key, i),
+    }));
+  });
+
+  const notFound = computed(
+    () =>
+      !loading.value &&
+      !error.value &&
+      localView.value == null &&
+      asmrWork.value == null &&
+      scrapedWork.value == null
+  );
+
+  /** 探测 asmr.one 是否存在。spec §2.3：始终探测（不拉文件树），无 token 直接跳过。 */
+  async function probeOnline(): Promise<boolean> {
+    const rj = rjCode.value;
+    if (!rj) return false;
+    try {
+      const s = await api.getSettings();
+      if (!s.asmr_one_token) return false;
+    } catch {
+      return false;
+    }
+    try {
+      const tracks = await api.listAsmroneTracks(rj);
+      onlineTracks.value = tracks;
+      return tracks.length > 0;
+    } catch {
+      onlineTracks.value = [];
+      return false;
+    }
+  }
+
+  async function loadLocalState() {
+    const rj = rjCode.value;
+    if (!rj) {
+      localView.value = null;
+      return;
+    }
+    try {
+      localView.value = await api.getWorkByRj(rj);
+    } catch {
+      localView.value = null;
+    }
+  }
+
+  async function load() {
+    loading.value = true;
+    error.value = "";
+    copied.value = false;
+    localView.value = null;
+    asmrWork.value = null;
+    scrapedWork.value = null;
+    dlsiteDescription.value = "";
+    localTracks.value = [];
+    onlineTracks.value = [];
+    fileTree.value = null;
+
+    const id = opts.id.value;
+    try {
+      if (opts.source === "work") {
+        const v = await api.getWork(Number(id));
+        if (!v) {
+          localView.value = null;
+          return;
+        }
+        localView.value = v;
+        localTracks.value = await api.listTracks(v.work.id);
+      } else if (opts.source === "asmr") {
+        asmrWork.value = await api.asmrWorkDetail(id);
+        loadDlsiteDescription();
+      } else {
+        scrapedWork.value = await api.previewByRj(id);
+      }
+      await loadLocalState();
+      tracksLoading.value = true;
+      hasOnline.value = await probeOnline();
+      // asmr 模式需要文件树以支撑「全部文件」标签页（spec §8）。
+      // 作品库本地有音轨时 mode === 'local'，按 spec §2.3 不拉树（避免「音频 N / 全部文件 M」来源不一致）。
+      if (mode.value === "asmr" && rjCode.value) {
+        fileTree.value = await api.listAsmroneTree(rjCode.value).catch(() => null);
+      }
+      tracksLoading.value = false;
+    } catch (e) {
+      error.value = String(e);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /** ASMR ONE 页补充 DLsite 简介（asmr.one API 不提供简介） */
+  async function loadDlsiteDescription() {
+    const rj = asmrWork.value?.rj_code;
+    if (!rj || descriptionLoading.value) return;
+    descriptionLoading.value = true;
+    try {
+      dlsiteDescription.value = await api.getDlsiteDescription(rj);
+    } catch {
+      dlsiteDescription.value = "";
+    } finally {
+      descriptionLoading.value = false;
+    }
+  }
+
+  function onTagsUpdated() {
+    load();
+  }
+
+  function copiedReset() {
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 1500);
+  }
+
+  async function playAll() {
+    const w = view.value;
+    if (!w || !localTracks.value.length) return;
+    const progress = await api.getPlayProgress(w.work.id);
+    let startIndex = 0;
+    let initialTime = 0;
+    if (progress) {
+      const idx = localTracks.value.findIndex((t) => t.id === progress.track_id);
+      if (idx >= 0) {
+        startIndex = idx;
+        initialTime = progress.last_position || 0;
+      }
+    }
+    player.playFromWork(w, localTracks.value, startIndex, initialTime);
+    router.push({ name: "player" });
+  }
+
+  async function playOnline() {
+    const w = view.value;
+    if (!w) return;
+    if (!onlineTracks.value.length) {
+      alert("asmr.one 未找到音频文件");
+      return;
+    }
+    player.playFromWork(w, onlineTracks.value, 0, 0);
+    router.push({ name: "player" });
+  }
+
+  async function importWork() {
+    const rj = rjCode.value;
+    if (!rj) return;
+    const res = await api.importByRj(rj);
+    worksStore.fetchWorks();
+    worksStore.loadTags();
+    router.push(`/work/${res.work.work.id}`);
+  }
+
+  function goLocal() {
+    if (localView.value) router.push(`/work/${localView.value.work.id}`);
+  }
+
+  /** spec §6 下载流程：静默入库 → 拉文件树 → 弹选择框 → 下载 → 留在当前页 */
+  async function openAsmrDownload() {
+    const rj = rjCode.value;
+    if (!rj) return;
+    const s = await api.getSettings();
+    if (!s.asmr_one_token) {
+      alert("请先在「设置 -> asmr.one」登录获取 Token 后再试");
+      return;
+    }
+    if (!localView.value) {
+      const res = await api.importByRj(rj);
+      worksStore.fetchWorks();
+      worksStore.loadTags();
+      localView.value = res.work;
+    }
+    showFileTree.value = true;
+    // asmr 模式下文件树已在 load() 中拉好，避免重复请求
+    if (fileTree.value) return;
+    treeLoading.value = true;
+    try {
+      fileTree.value = await api.listAsmroneTree(rj);
+    } catch (e) {
+      alert(`获取 asmr.one 文件树失败: ${e}`);
+      showFileTree.value = false;
+    } finally {
+      treeLoading.value = false;
+    }
+  }
+
+  async function onFileTreeDownload(files: AsmrDownloadFile[]) {
+    showFileTree.value = false;
+    const id = localView.value?.work.id;
+    if (!id) return;
+    try {
+      await api.downloadAsmroneFiles(id, files);
+      alert(`已开始从 asmr.one 下载 ${files.length} 个文件，可在「下载管理」查看实时进度。`);
+      await loadLocalState();
+    } catch (e) {
+      alert(`下载失败: ${e}`);
+    }
+  }
+
+  function openDlsite() {
+    const url =
+      rawWork.value?.dlsite_url ??
+      (rjCode.value
+        ? `https://www.dlsite.com/maniax/work/=/product_id/${rjCode.value}.html`
+        : null);
+    if (url) window.open(url, "_blank", "noopener");
+  }
+
+  function openAsmrOne() {
+    const rj = rjCode.value;
+    if (rj) window.open(`https://www.asmr.one/work/${rj}`, "_blank", "noopener");
+  }
+
+  /** 作品库「下载」：首次点击展开内联直链输入框，填好后再点才真正开始下载 */
+  async function startDlDownload() {
+    const id = localView.value?.work.id;
+    if (!id) return;
+    if (!dlUrl.value.trim()) {
+      showUrlInput.value = true;
+      return;
+    }
+    await downloadStore.startDownload(id, dlUrl.value.trim());
+    showUrlInput.value = false;
+  }
+
+  async function scanTracks() {
+    const id = localView.value?.work.id;
+    if (!id) return;
+    const res = await api.scanAudioTracks(id);
+    if (!res.ok) alert(res.message || "扫描失败");
+    else await load();
+  }
+
+  async function translateWork() {
+    const id = localView.value?.work.id;
+    if (!id) return;
+    const res = await api.enqueueTranslation(id);
+    alert(res.message || "已加入翻译队列");
+  }
+
+  async function deleteWork() {
+    const id = localView.value?.work.id;
+    if (!id) return;
+    if (!confirm(`确定删除「${title.value}」？将从数据库移除该作品。`)) return;
+    await api.deleteWork(id);
+    worksStore.removeWork(id);
+    router.push({ name: "home" });
+  }
+
+  async function onFolderPicked(dir: string) {
+    showFolderPicker.value = false;
+    const rj = rjCode.value;
+    if (!rj) return;
+    try {
+      const res = await api.bindLocalFolder(rj, dir);
+      alert(
+        `关联成功！扫描到 ${res.trackCount} 首音轨${res.groupName ? `，已自动分配分组「${res.groupName}」` : ""}`
+      );
+      await load();
+      worksStore.fetchWorks();
+      worksStore.loadGroups();
+    } catch (e) {
+      alert(`关联失败: ${e}`);
+    }
+  }
+
+  /** 动作分发：统一处理 loading 状态与错误提示 */
+  async function runAction(key: ActionKey) {
+    if (busyKey.value) return;
+    busyKey.value = key;
+    try {
+      switch (key) {
+        case "play-all":
+          await playAll();
+          break;
+        case "online-play":
+          await playOnline();
+          break;
+        case "import":
+          await importWork();
+          break;
+        case "go-local":
+          goLocal();
+          break;
+        case "asmr-download":
+          await openAsmrDownload();
+          break;
+        case "dl-download":
+          await startDlDownload();
+          break;
+        case "scan-tracks":
+          await scanTracks();
+          break;
+        case "bind-local":
+          showFolderPicker.value = true;
+          break;
+        case "translate":
+          await translateWork();
+          break;
+        case "delete":
+          await deleteWork();
+          break;
+        case "open-dlsite":
+          openDlsite();
+          break;
+        case "open-asmr":
+          openAsmrOne();
+          break;
+      }
+    } catch (e) {
+      alert(`操作失败: ${e}`);
+    } finally {
+      busyKey.value = null;
+    }
+  }
+
+  watch(opts.id, (v, old) => {
+    if (v && v !== old) load();
+  });
+  load();
+
+  return {
+    loading,
+    error,
+    mode,
+    hasOnline,
+    localView,
+    view,
+    title,
+    subtitle,
+    rjCode,
+    coverUrl,
+    statusBadge,
+    meta,
+    actors,
+    tags,
+    editableTags,
+    workId,
+    description,
+    descriptionNote,
+    descriptionLoading,
+    actions,
+    localTracks,
+    onlineTracks,
+    fileTree,
+    displayTracks,
+    tracksLoading,
+    treeLoading,
+    notFound,
+    copied,
+    showFileTree,
+    showFolderPicker,
+    showUrlInput,
+    dlUrl,
+    busyKey,
+    copiedReset,
+    reload: load,
+    runAction,
+    onFileTreeDownload,
+    onFolderPicked,
+    onTagsUpdated,
+  };
+}

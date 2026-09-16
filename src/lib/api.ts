@@ -105,6 +105,11 @@ export function getWork(id: number): Promise<WorkView | null> {
   return get(`/api/works/${id}`);
 }
 
+/** 按 RJ 号查本地作品（大小写不敏感）。未入库返回 null。 */
+export function getWorkByRj(rjCode: string): Promise<WorkView | null> {
+  return get(`/api/works/by-rj/${encodeURIComponent(rjCode)}`);
+}
+
 export function updateWork(work: Work): Promise<void> {
   return put("/api/works", work);
 }
