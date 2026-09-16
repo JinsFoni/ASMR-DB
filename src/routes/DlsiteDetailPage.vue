@@ -188,7 +188,7 @@ async function playOnline() {
           <RotateCw :size="13" /> 重试
         </button>
         <button class="btn-ghost !text-xs" @click="openDlsite">
-          <Globe :size="13" /> 打开 DLsite 页面
+          <Globe :size="13" /> 打开 DLsite
         </button>
       </div>
     </div>
@@ -265,7 +265,7 @@ async function playOnline() {
             入库
           </button>
           <button class="btn-ghost" @click="openDlsite">
-            <Globe :size="14" /> DLsite 页面
+            <Globe :size="14" /> DLsite
           </button>
           <button v-if="hasOnline" class="btn-ghost" @click="openAsmrOne">
             <Monitor :size="14" /> ASMR One

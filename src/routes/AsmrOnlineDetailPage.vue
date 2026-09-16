@@ -300,7 +300,7 @@ function goLocal() {
             <Library :size="14" /> 本地详情
           </button>
           <button v-if="detail.rj_code" class="btn-ghost" @click="openDlsite">
-            <Globe :size="14" /> DLsite 页面
+            <Globe :size="14" /> DLsite
           </button>
           <button class="btn-ghost" @click="openAsmrOneWeb">
             <Monitor :size="14" /> ASMR One
