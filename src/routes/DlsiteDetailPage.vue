@@ -11,14 +11,18 @@ import {
   ImageOff,
   BookmarkCheck,
   RotateCw,
+  Headphones,
 } from "lucide-vue-next";
 import * as api from "../lib/api";
-import type { ScrapedWork } from "../lib/types";
+import type { ScrapedWork, Track, AsmrTreeNode, WorkView } from "../lib/types";
+import TrackList from "../components/detail/TrackList.vue";
 import { useWorksStore } from "../stores/works";
+import { usePlayerStore } from "../stores/player";
 
 const route = useRoute();
 const router = useRouter();
 const worksStore = useWorksStore();
+const player = usePlayerStore();
 const rj = String(route.params.rj || "").toUpperCase();
 
 const scraped = ref<ScrapedWork | null>(null);
@@ -27,6 +31,13 @@ const error = ref("");
 const copied = ref(false);
 const importing = ref(false);
 
+// ============ asmr.one 在线试听（作品存在于 asmr.one 时才显示） ============
+const hasOnline = ref(false);
+const onlineTracks = ref<Track[]>([]);
+const fileTree = ref<AsmrTreeNode[] | null>(null);
+const tracksLoading = ref(false);
+const onlineLoading = ref(false);
+
 const title = computed(
   () => scraped.value?.title_zh || scraped.value?.title_ja || scraped.value?.rj_code
 );
@@ -34,12 +45,39 @@ const title = computed(
 async function load() {
   loading.value = true;
   error.value = "";
+  hasOnline.value = false;
+  onlineTracks.value = [];
+  fileTree.value = null;
   try {
     scraped.value = await api.previewByRj(rj);
+    loadOnlineTracks();
   } catch (e) {
     error.value = String(e);
   } finally {
     loading.value = false;
+  }
+}
+
+/**
+ * 静默探测 asmr.one 是否有该作品（按 RJ 号拉取音轨）。
+ * 拉到音频则显示在线试听按钮和音轨列表，失败（404/无音频）则什么都不显示。
+ */
+async function loadOnlineTracks() {
+  if (tracksLoading.value) return;
+  tracksLoading.value = true;
+  try {
+    const [t, tree] = await Promise.all([
+      api.listAsmroneTracks(rj),
+      api.listAsmroneTree(rj).catch(() => null),
+    ]);
+    onlineTracks.value = t;
+    fileTree.value = tree;
+    hasOnline.value = t.length > 0;
+  } catch {
+    // asmr.one 无此作品或未登录等原因，静默忽略
+    hasOnline.value = false;
+  } finally {
+    tracksLoading.value = false;
   }
 }
 
@@ -76,6 +114,60 @@ function openDlsite() {
 
 function openAsmrOne() {
   window.open(`https://www.asmr.one/work/${rj}`, "_blank", "noopener");
+}
+
+/** 构造临时 WorkView 供播放器/音轨列表展示（在线音轨不写播放进度） */
+const fakeView = computed<WorkView>(() => {
+  const w = scraped.value;
+  return {
+    work: {
+      id: 0,
+      rj_code: rj,
+      title_ja: w?.title_ja || null,
+      title_zh: w?.title_zh || null,
+      title_en: null,
+      circle_name: w?.circle_name || null,
+      circle_id: null,
+      cover_url: w?.cover_url || null,
+      work_type: "voice",
+      price: w?.price ?? null,
+      sale_date: w?.sale_date || null,
+      description: w?.description ?? null,
+      description_zh: null,
+      age_class: w?.age_class || null,
+      duration_min: w?.duration_min ?? null,
+      file_size_mb: w?.file_size_mb ?? null,
+      dlsite_url: w?.dlsite_url || `https://www.dlsite.com/maniax/work/=/product_id/${rj}.html`,
+      created_at: null,
+      updated_at: null,
+    },
+    tags: [],
+    actors: w?.actors || [],
+    download_status: "not_downloaded",
+    local_path: null,
+    track_count: onlineTracks.value.length,
+    total_duration_sec: 0,
+    group: null,
+  };
+});
+
+/** 在线试听：进入播放器播放 asmr.one 音轨 */
+async function playOnline() {
+  if (onlineLoading.value) return;
+  onlineLoading.value = true;
+  try {
+    if (!onlineTracks.value.length) await loadOnlineTracks();
+    if (!onlineTracks.value.length) {
+      alert("asmr.one 未找到音频文件");
+      return;
+    }
+    player.playFromWork(fakeView.value, onlineTracks.value, 0, 0);
+    router.push({ name: "player" });
+  } catch (e) {
+    alert(`在线试听失败: ${e}`);
+  } finally {
+    onlineLoading.value = false;
+  }
 }
 </script>
 
@@ -162,6 +254,11 @@ function openAsmrOne() {
 
         <!-- 操作按钮：入库替代删除，本地文件相关操作不显示 -->
         <div class="flex flex-wrap gap-2 mt-5">
+          <button v-if="hasOnline" class="btn-primary" :disabled="onlineLoading" @click="playOnline">
+            <Loader2 v-if="onlineLoading" :size="14" class="animate-spin" />
+            <Headphones v-else :size="14" />
+            在线试听
+          </button>
           <button class="btn-primary" :disabled="importing" @click="importWork">
             <Loader2 v-if="importing" :size="14" class="animate-spin" />
             <BookmarkCheck v-else :size="14" />
@@ -170,7 +267,7 @@ function openAsmrOne() {
           <button class="btn-ghost" @click="openDlsite">
             <Globe :size="14" /> DLsite 页面
           </button>
-          <button class="btn-ghost" @click="openAsmrOne">
+          <button v-if="hasOnline" class="btn-ghost" @click="openAsmrOne">
             <Monitor :size="14" /> ASMR One
           </button>
         </div>
@@ -184,5 +281,20 @@ function openAsmrOne() {
         {{ scraped.description }}
       </p>
     </div>
+
+    <!-- asmr.one 音轨（文件）列表：仅当该作品在 asmr.one 上存在时显示 -->
+    <template v-if="hasOnline">
+      <div v-if="tracksLoading" class="card p-6 flex items-center justify-center text-muted">
+        <Loader2 :size="18" class="animate-spin" />
+        <span class="text-xs ml-2">正在获取 asmr.one 音轨列表…</span>
+      </div>
+      <TrackList
+        v-else-if="onlineTracks.length"
+        :tracks="onlineTracks"
+        :work="fakeView"
+        online
+        :tree="fileTree"
+      />
+    </template>
   </div>
 </template>

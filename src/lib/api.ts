@@ -464,6 +464,13 @@ export function refreshDlsiteRanking(term?: string): Promise<{ ok: boolean; refr
   return post("/api/dlsite/ranking/refresh", term ? { term } : {});
 }
 
+/** 抓取 DLsite 作品页的完整「作品内容」简介（asmr.one API 不提供简介，用它补充）。 */
+export function getDlsiteDescription(rjCode: string): Promise<string> {
+  return get<{ description: string }>(
+    `/api/dlsite/description${qs({ rj: rjCode })}`
+  ).then((r) => r.description);
+}
+
 // ---------- 服务端目录浏览 ----------
 
 export interface DirEntry {

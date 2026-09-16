@@ -12,6 +12,112 @@ pub fn product_url(rj_code: &str) -> String {
     format!("https://www.dlsite.com/maniax/work/=/product_id/{}.html", rj)
 }
 
+/// 仅抓取 DLsite 作品页的完整「作品内容」简介（HTML 转纯文本，保留换行）。
+/// 供 ASMR ONE 在线详情页补充展示：asmr.one 的 API 不提供作品简介，
+/// og:description 的 meta 又只有截断的一句话，只有作品页正文才是完整简介。
+pub fn fetch_work_description(rj_code: &str, proxy: &ProxyConfig) -> Result<String, String> {
+    let rj = rj_code.trim().to_uppercase();
+    let builder = reqwest::blocking::Client::builder()
+        .user_agent(USER_AGENT)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .timeout(std::time::Duration::from_secs(30));
+    let client = proxy
+        .apply_blocking(builder, ProxyTarget::Dlsite)
+        .build()
+        .map_err(|e| format!("构建请求客户端失败: {e}"))?;
+
+    let url = product_url(&rj);
+    let resp = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("请求 DLsite 页面失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("DLsite 页面返回 {}", resp.status()));
+    }
+    let html = resp.text().map_err(|e| format!("读取响应失败: {e}"))?;
+    let doc = Html::parse_document(&html);
+
+    // 完整简介容器：itemprop="description"（class="work_parts_container"），
+    // 依次尝试该容器内段落、容器全文、og:description 兜底
+    let container_sel = Selector::parse("[itemprop='description']")
+        .or_else(|_| Selector::parse(".work_parts_container"))
+        .map_err(|e| e.to_string())?;
+    let p_sel = Selector::parse("p").map_err(|e| e.to_string())?;
+    let br_sel = Selector::parse("br").map_err(|e| e.to_string())?;
+
+    let mut text = String::new();
+    if let Some(container) = doc.select(&container_sel).next() {
+        for p in container.select(&p_sel) {
+            // 用 inner_html 按 <br> 拆行后剥离标签，保留原文换行结构
+            let inner = p.inner_html();
+            let html_line = inner
+                .replace("<br>", "\n")
+                .replace("<br/>", "\n")
+                .replace("<br />", "\n");
+            let line = strip_tags(&html_line);
+            // 元素间换行数（<br> 可能连续出现多个），压掉段首尾空白
+            let line = line.trim();
+            let br_count = p.select(&br_sel).count();
+            if !line.is_empty() {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(line);
+                // 连续多个 <br> 保留为空行
+                for _ in 1..br_count.min(2) {
+                    text.push('\n');
+                }
+            }
+        }
+        if text.is_empty() {
+            // 容器内没有 <p> 时直接取容器文本
+            text = container.text().collect::<String>().trim().to_string();
+        }
+    }
+    if text.is_empty() {
+        return Err("DLsite 页面未找到作品简介".to_string());
+    }
+    Ok(text)
+}
+
+/// 剥离 HTML 标签，只留文本与实体解码后的内容（简介 <p> 内已按 <br> 拆行）。
+fn strip_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut chars = html.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            '&' if !in_tag => {
+                // 解码常见实体
+                let rest: String = chars.clone().collect();
+                let entity = rest.split('&').next().unwrap_or("");
+                let decoded = match entity.split(';').next() {
+                    Some("amp") => Some('&'),
+                    Some("lt") => Some('<'),
+                    Some("gt") => Some('>'),
+                    Some("quot") => Some('"'),
+                    Some("nbsp") => Some(' '),
+                    _ => None,
+                };
+                if let Some(d) = decoded {
+                    out.push(d);
+                    let skip = entity.find(';').map(|i| i + 1).unwrap_or(0);
+                    for _ in 0..skip {
+                        chars.next();
+                    }
+                } else {
+                    out.push('&');
+                }
+            }
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Fetch and parse metadata for a work given its RJ code.
 pub fn fetch_work_metadata(rj_code: &str, proxy: &ProxyConfig) -> Result<ScrapedWork, Box<dyn Error>> {
     let rj = rj_code.trim().to_uppercase();

@@ -217,6 +217,10 @@ async fn main() {
             "/api/dlsite/ranking/refresh",
             post(handlers::dlsite::refresh_ranking),
         )
+        .route(
+            "/api/dlsite/description",
+            get(handlers::dlsite::get_description),
+        )
         // ============ LLM 翻译 ============
         .route(
             "/api/translations",

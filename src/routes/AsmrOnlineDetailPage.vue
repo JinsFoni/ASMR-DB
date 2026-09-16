@@ -35,6 +35,10 @@ const copied = ref(false);
 const onlineLoading = ref(false);
 const importing = ref(false);
 
+// ============ DLsite 完整简介（asmr.one API 不提供简介，按 RJ 号从 DLsite 抓取补充） ============
+const dlsiteDescription = ref("");
+const dlsiteDescLoading = ref(false);
+
 const title = computed(() => detail.value?.title || detail.value?.rj_code || `#${workId}`);
 
 async function load() {
@@ -43,13 +47,29 @@ async function load() {
   copied.value = false;
   tracks.value = [];
   fileTree.value = null;
+  dlsiteDescription.value = "";
   try {
     detail.value = await api.asmrWorkDetail(workId.value);
     loadTracks();
+    loadDlsiteDescription();
   } catch (e) {
     error.value = String(e);
   } finally {
     loading.value = false;
+  }
+}
+
+/** 拉取 DLsite 作品页的完整「作品内容」简介；失败静默（该作品可能未在 DLsite 上架）。 */
+async function loadDlsiteDescription() {
+  const rj = detail.value?.rj_code;
+  if (!rj || dlsiteDescLoading.value) return;
+  dlsiteDescLoading.value = true;
+  try {
+    dlsiteDescription.value = await api.getDlsiteDescription(rj);
+  } catch {
+    dlsiteDescription.value = "";
+  } finally {
+    dlsiteDescLoading.value = false;
   }
 }
 
@@ -289,11 +309,36 @@ function goLocal() {
       </div>
     </div>
 
-    <!-- 简介 -->
-    <div v-if="detail.description" class="card p-4">
-      <div class="text-xs font-semibold text-white mb-2">📝 简介</div>
-      <p class="text-xs text-muted leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto">
+    <!-- 简介：asmr.one 自带简介优先，否则显示从 DLsite 抓取的完整「作品内容」 -->
+    <div
+      v-if="detail.description || dlsiteDescription || dlsiteDescLoading"
+      class="card p-4"
+    >
+      <div class="text-xs font-semibold text-white mb-2">
+        📝 简介
+        <span
+          v-if="!detail.description && dlsiteDescription"
+          class="ml-1 text-[10px] font-normal text-muted"
+          >（来自 DLsite）</span
+        >
+      </div>
+      <p
+        v-if="dlsiteDescLoading && !detail.description && !dlsiteDescription"
+        class="text-xs text-muted flex items-center gap-2"
+      >
+        <Loader2 :size="14" class="animate-spin" /> 正在获取 DLsite 简介…
+      </p>
+      <p
+        v-else-if="detail.description"
+        class="text-xs text-muted leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto"
+      >
         {{ detail.description }}
+      </p>
+      <p
+        v-else-if="dlsiteDescription"
+        class="text-xs text-muted leading-relaxed whitespace-pre-line max-h-96 overflow-y-auto"
+      >
+        {{ dlsiteDescription }}
       </p>
     </div>
 

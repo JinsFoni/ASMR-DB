@@ -50,6 +50,37 @@ pub async fn get_ranking(
 }
 
 #[derive(Deserialize)]
+pub struct DescriptionQuery {
+    pub rj: String,
+}
+
+/// GET /api/dlsite/description?rj=RJxxx — 抓取 DLsite 作品页的完整「作品内容」简介。
+/// 供 ASMR ONE 在线详情页补充展示（asmr.one API 不提供作品简介）。
+pub async fn get_description(
+    State(state): State<SharedState>,
+    Query(q): Query<DescriptionQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let proxy = tokio::task::spawn_blocking({
+        let state = state.clone();
+        move || -> Result<ProxyConfig, AppError> {
+            let conn = state.db.get().map_err(AppError::new)?;
+            Ok(ProxyConfig::from_conn(&conn))
+        }
+    })
+    .await
+    .map_err(AppError::new)??;
+
+    let rj = q.rj;
+    let description = tokio::task::spawn_blocking(move || {
+        crate::api::scraper::fetch_work_description(&rj, &proxy).map_err(AppError::new)
+    })
+    .await
+    .map_err(AppError::new)??;
+
+    Ok(Json(json!({ "description": description })))
+}
+
+#[derive(Deserialize)]
 pub struct RefreshBody {
     /// 不传或为空时刷新全部 5 个周期
     pub term: Option<String>,
