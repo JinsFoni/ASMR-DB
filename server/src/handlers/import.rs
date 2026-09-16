@@ -56,7 +56,7 @@ pub async fn import_by_rj(
     Json(body): Json<RjSourceBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let (token, proxy, asmr_api_base) = {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let token = queries::get_setting(&conn, "asmr_one_token")
             .ok()
             .flatten()
@@ -76,7 +76,7 @@ pub async fn import_by_rj(
     .map_err(AppError::new)??;
 
     let view = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let work_id = queries::upsert_work(&conn, &scraped).map_err(AppError::new)?;
         queries::set_work_actors(&conn, work_id, &scraped.actors).map_err(AppError::new)?;
         queries::set_work_auto_tags(&conn, work_id, &scraped.tags).map_err(AppError::new)?;
@@ -112,7 +112,7 @@ pub async fn preview_by_rj(
     Json(body): Json<RjSourceBody>,
 ) -> Result<Json<ScrapedWork>, AppError> {
     let (token, proxy, asmr_api_base) = {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let token = queries::get_setting(&conn, "asmr_one_token")
             .ok()
             .flatten()
@@ -162,7 +162,7 @@ pub async fn scan_folder(
         let mut items: Vec<ScannedItem> = Vec::new();
         collect_rj_dirs(&root, &mut items, 0);
 
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         for item in &mut items {
             match queries::get_work_by_rj(&conn, &item.rj_code) {
                 Ok(Some(w)) => {
@@ -198,7 +198,7 @@ pub async fn bind_local_folder(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let result = tokio::task::spawn_blocking(
         move || -> Result<serde_json::Value, AppError> {
-            let conn = state.db.lock().map_err(AppError::new)?;
+            let conn = state.db.get().map_err(AppError::new)?;
             let work = queries::get_work_by_rj(&conn, &body.rj_code)
             .map_err(AppError::new)?
             .ok_or_else(|| AppError(format!("未找到 RJ{} 的作品，请先导入", body.rj_code)))?;

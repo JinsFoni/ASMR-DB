@@ -39,76 +39,65 @@ pub fn list_works(
     per_page: u32,
 ) -> Result<(Vec<WorkView>, u32), rusqlite::Error> {
     // Build base SQL — use LIKE for CJK-friendly substring search (library sizes are small).
-    let base_sql = if let Some(kw) = search {
+    // 所有外部输入一律走 ?N 参数绑定，SQL 结构与数据分离，杜绝注入。
+    let mut conditions: Vec<String> = Vec::new();
+    let mut bind_values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let mut next_param = 1;
+
+    if let Some(kw) = search {
         let kw = kw.trim();
         if !kw.is_empty() {
-            let pat = format!("%{}%", kw.replace(['%', '_', '\''], ""));
-            format!(
-                "FROM works w
-                 WHERE (w.rj_code LIKE '{}' COLLATE NOCASE
-                     OR w.title_ja LIKE '{}'
-                     OR w.title_zh LIKE '{}'
-                     OR w.title_en LIKE '{}'
-                     OR w.circle_name LIKE '{}')",
-                pat, pat, pat, pat, pat
-            )
-        } else {
-            "FROM works w".to_string()
+            let idx = next_param;
+            next_param += 1;
+            let pat = format!("%{}%", kw);
+            conditions.push(format!(
+                "(w.rj_code LIKE ?{idx} COLLATE NOCASE
+                 OR w.title_ja LIKE ?{idx}
+                 OR w.title_zh LIKE ?{idx}
+                 OR w.title_en LIKE ?{idx}
+                 OR w.circle_name LIKE ?{idx})"
+            ));
+            bind_values.push(Box::new(pat));
         }
-    } else {
-        "FROM works w".to_string()
-    };
-
-    let mut sql = base_sql.clone();
-    let mut has_where = sql.contains(" WHERE ");
+    }
     if let Some(st) = status_filter {
-        let cond = match st {
-            "downloaded" => {
+        match st {
+            "downloaded" => conditions.push(
                 " EXISTS (SELECT 1 FROM local_files lf WHERE lf.work_id = w.id AND lf.download_status = 'downloaded')"
-            }
-            "not_downloaded" => {
+                    .to_string(),
+            ),
+            "not_downloaded" => conditions.push(
                 " NOT EXISTS (SELECT 1 FROM local_files lf WHERE lf.work_id = w.id AND lf.download_status = 'downloaded')"
-            }
-            "downloading" => {
+                    .to_string(),
+            ),
+            "downloading" => conditions.push(
                 " EXISTS (SELECT 1 FROM local_files lf WHERE lf.work_id = w.id AND lf.download_status = 'downloading')"
-            }
-            _ => "",
-        };
-        if !cond.is_empty() {
-            if has_where {
-                sql.push_str(" AND");
-            } else {
-                sql.push_str(" WHERE");
-                has_where = true;
-            }
-            sql.push_str(cond);
+                    .to_string(),
+            ),
+            _ => {}
         }
     }
     if let Some(tid) = tag_filter {
-        let cond = format!(
-            " EXISTS (SELECT 1 FROM work_tags wt WHERE wt.work_id = w.id AND wt.tag_id = {})",
-            tid
+        let idx = next_param;
+        next_param += 1;
+        conditions.push(
+            format!(" EXISTS (SELECT 1 FROM work_tags wt WHERE wt.work_id = w.id AND wt.tag_id = ?{idx})"),
         );
-        if has_where {
-            sql.push_str(" AND");
-        } else {
-            sql.push_str(" WHERE");
-            has_where = true;
-        }
-        sql.push_str(&cond);
+        bind_values.push(Box::new(tid));
     }
     if let Some(gid) = group_filter {
-        let cond = format!(
-            " EXISTS (SELECT 1 FROM work_groups wg WHERE wg.work_id = w.id AND wg.group_id = {})",
-            gid
+        let idx = next_param;
+        next_param += 1;
+        conditions.push(
+            format!(" EXISTS (SELECT 1 FROM work_groups wg WHERE wg.work_id = w.id AND wg.group_id = ?{idx})"),
         );
-        if has_where {
-            sql.push_str(" AND");
-        } else {
-            sql.push_str(" WHERE");
-            has_where = true;
-        }
-        sql.push_str(&cond);
+        bind_values.push(Box::new(gid));
+    }
+
+    let mut sql = String::from("FROM works w");
+    if !conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&conditions.join(" AND"));
     }
 
     let sort_col = match sort_by {
@@ -120,9 +109,12 @@ pub fn list_works(
     let sort_dir = if sort_by == "sale_date" { "DESC" } else { "DESC" };
     sql.push_str(&format!(" ORDER BY {} {}", sort_col, sort_dir));
 
+    let bind_refs: Vec<&dyn rusqlite::ToSql> =
+        bind_values.iter().map(|b| b.as_ref()).collect();
+
     // Count
     let count_sql = format!("SELECT COUNT(*) {};", sql);
-    let total: u32 = conn.query_row(&count_sql, [], |r| r.get(0))?;
+    let total: u32 = conn.query_row(&count_sql, bind_refs.as_slice(), |r| r.get(0))?;
 
     // Paginate
     let offset = (page.saturating_sub(1)) * per_page;
@@ -131,7 +123,7 @@ pub fn list_works(
         sql, per_page, offset
     );
     let mut stmt = conn.prepare(&page_sql)?;
-    let rows = stmt.query_map([], |row| {
+    let rows = stmt.query_map(bind_refs.as_slice(), |row| {
         let work = row_to_work(row)?;
         Ok(work)
     })?;

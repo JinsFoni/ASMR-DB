@@ -45,7 +45,7 @@ pub async fn get_settings(
     State(state): State<SharedState>,
 ) -> Result<Json<SettingsResponse>, AppError> {
     let s = tokio::task::spawn_blocking(move || -> Result<SettingsResponse, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         Ok(SettingsResponse {
             download_dir: queries::get_setting(&conn, "download_dir").ok().flatten(),
             theme: queries::get_setting(&conn, "theme")
@@ -128,7 +128,7 @@ pub async fn set_settings(
     Json(body): Json<SetSettingsBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         if let Some(t) = body.theme {
             queries::set_setting(&conn, "theme", &t).map_err(AppError::new)?;
         }
@@ -202,7 +202,7 @@ pub async fn set_asmr_token(
     Json(body): Json<TokenBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::set_setting(&conn, "asmr_one_token", &body.token).map_err(AppError::new)
     })
     .await
@@ -214,7 +214,7 @@ pub async fn clear_asmr_token(
     State(state): State<SharedState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::set_setting(&conn, "asmr_one_token", "").map_err(AppError::new)
     })
     .await
@@ -237,7 +237,7 @@ pub async fn asmr_login(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let body = body.map(|Json(b)| b).unwrap_or_default();
     let (address, saved_username, saved_password, proxy) = {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         (
             queries::get_setting(&conn, "asmr_one_address").ok().flatten(),
             queries::get_setting(&conn, "asmr_one_username").ok().flatten(),
@@ -268,7 +268,7 @@ pub async fn asmr_login(
 
     // 登录成功：保存 token（账号密码由「保存设置」或本次请求体负责持久化）
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::set_setting(&conn, "asmr_one_token", &token).map_err(AppError::new)?;
         queries::set_setting(&conn, "asmr_one_username", username2.trim()).map_err(AppError::new)?;
         if let Some(p) = provided_password.filter(|p| !p.is_empty()) {
@@ -303,7 +303,7 @@ pub async fn export_database(
                 .map(|d| d.as_millis())
                 .unwrap_or(0)
         ));
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let sql = format!("VACUUM INTO '{}';", tmp.to_string_lossy().replace('\'', "''"));
         conn.execute_batch(&sql).map_err(AppError::new)?;
         drop(conn);
@@ -368,31 +368,29 @@ pub async fn import_database(
         }
 
         let current_db_path = state.db_path.clone();
-        let mut conn_guard = state.db.lock().map_err(AppError::new)?;
-
-        // WAL checkpoint 确保当前数据落盘
-        let _ = conn_guard.pragma_update(None, "journal_mode", "WAL");
+        let mut conn = state.db.get().map_err(AppError::new)?;
 
         // 备份当前数据库（以防万一）
         let backup_path = current_db_path.with_extension("db.bak");
         let _ = std::fs::copy(&current_db_path, &backup_path);
 
-        // 用内存库占位释放文件锁，再覆盖数据库文件
-        let placeholder = rusqlite::Connection::open_in_memory().map_err(AppError::new)?;
-        *conn_guard = placeholder;
+        // 用 SQLite backup API 把上传的库整体恢复到当前连接，池内其他连接
+        // 会在下次使用时读到新内容（WAL 下跨连接可见）。
+        {
+            let mut src = rusqlite::Connection::open(&tmp)
+                .map_err(|e| AppError(format!("无法打开源数据库: {e}")))?;
+            let dst = rusqlite::backup::Backup::new(&src, &mut *conn)
+                .map_err(|e| AppError(format!("初始化恢复失败: {e}")))?;
+            dst.run_to_completion(64, std::time::Duration::from_millis(5), None)
+                .map_err(|e| AppError(format!("恢复数据库失败: {e}")))?;
+        }
 
-        std::fs::copy(&tmp, &current_db_path)
-            .map_err(|e| AppError(format!("覆盖数据库失败: {e}")))?;
-        let _ = std::fs::remove_file(current_db_path.with_extension("db-wal"));
-        let _ = std::fs::remove_file(current_db_path.with_extension("db-shm"));
+        // 运行迁移以对齐表结构
+        crate::db::migrate_conn(&conn)
+            .map_err(|e| AppError(format!("迁移失败: {e}")))?;
         let _ = std::fs::remove_file(&tmp);
 
-        // 重新打开新的数据库并运行迁移
-        let new_conn = crate::db::init_database(&current_db_path)
-            .map_err(|e| AppError(format!("重新初始化数据库失败: {e}")))?;
-        *conn_guard = new_conn;
-
-        let count: i64 = conn_guard
+        let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM works", [], |r| r.get(0))
             .unwrap_or(0);
 
@@ -618,7 +616,7 @@ pub async fn fetch_subtitle(
     axum::extract::Query(q): axum::extract::Query<SubtitleFetchQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let (token, proxy, api_base) = {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         (
             queries::get_setting(&conn, "asmr_one_token")
                 .ok()

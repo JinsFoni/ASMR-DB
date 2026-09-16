@@ -39,7 +39,7 @@ pub async fn download_work(
     Json(body): Json<DownloadBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let (rj, title, download_dir) = {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let view = queries::get_work(&conn, body.work_id)
             .map_err(AppError::new)?
             .ok_or_else(|| AppError("作品不存在".to_string()))?;
@@ -130,7 +130,7 @@ fn run_download(
     download_dir: &PathBuf,
 ) -> Result<(), String> {
     let proxy = {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = state.db.get().map_err(|e| e.to_string())?;
         crate::api::proxy::ProxyConfig::from_conn(&conn)
     };
     let builder = reqwest::blocking::Client::builder()
@@ -363,7 +363,7 @@ pub async fn download_asmr(
         return Err(AppError("未选择任何文件".to_string()));
     }
     let (rj, work_dir, token) = {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let view = queries::get_work(&conn, body.work_id)
             .map_err(AppError::new)?
             .ok_or_else(|| AppError("作品不存在".to_string()))?;
@@ -459,7 +459,7 @@ fn run_asmrone_download(
     cancel: &Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), String> {
     let proxy = {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let conn = state.db.get().map_err(|e| e.to_string())?;
         crate::api::proxy::ProxyConfig::from_conn(&conn)
     };
     let builder = reqwest::blocking::Client::builder()
@@ -663,7 +663,7 @@ pub async fn set_settings(
     Json(body): Json<DownloadSettingsBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::set_setting(&conn, "download_dir", &body.download_dir).map_err(AppError::new)?;
         queries::set_setting(&conn, "download_concurrency", &body.concurrency.to_string())
             .map_err(AppError::new)
@@ -683,7 +683,7 @@ pub async fn get_settings(
     State(state): State<SharedState>,
 ) -> Result<Json<DownloadSettings>, AppError> {
     let s = tokio::task::spawn_blocking(move || -> Result<DownloadSettings, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let dir = queries::get_setting(&conn, "download_dir")
             .ok()
             .flatten()

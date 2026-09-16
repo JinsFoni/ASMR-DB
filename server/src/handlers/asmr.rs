@@ -51,7 +51,7 @@ async fn annotate_local(
 ) -> Result<Vec<AsmrOnlineWork>, AppError> {
     let state2 = state.clone();
     tokio::task::spawn_blocking(move || -> Result<Vec<AsmrOnlineWork>, AppError> {
-        let conn = state2.db.lock().map_err(AppError::new)?;
+        let conn = state2.db.get().map_err(AppError::new)?;
         for it in items.iter_mut() {
             if let Some(rj) = &it.rj_code {
                 if let Ok(Some(w)) = queries::get_work_by_rj(&conn, rj) {
@@ -151,7 +151,7 @@ pub async fn account(
         "history" => {
             // asmr.one 无公开云端历史 API（实测 404），使用本应用的播放记录
             let (works, has_next) = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
-                let conn = state.db.lock().map_err(AppError::new)?;
+                let conn = state.db.get().map_err(AppError::new)?;
                 queries::list_play_history_works(&conn, page, PAGE_SIZE).map_err(AppError::new)
             })
             .await

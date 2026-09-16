@@ -92,8 +92,21 @@ async fn main() {
         println!("🖥️  前端资源: {}", dist_dir.display());
     }
 
+    // ============ SQLite 连接池 ============
+    let manager = r2d2_sqlite::SqliteConnectionManager::file(&db_path)
+        .with_init(|c| db::configure_conn(c));
+    let pool = r2d2::Pool::builder()
+        .max_size(8)
+        .build(manager)
+        .map_err(|e| format!("连接池初始化失败: {e}"))
+        .unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(1);
+        });
+    println!("🔗 数据库连接池就绪（8 连接）");
+
     let state: SharedState = std::sync::Arc::new(AppState {
-        db: Mutex::new(conn),
+        db: pool,
         manager: DownloadManager::new(),
         db_path,
     });
@@ -106,7 +119,7 @@ async fn main() {
             loop {
                 let stale = tokio::task::spawn_blocking({
                     let state = state.clone();
-                    move || match state.db.lock() {
+                    move || match state.db.get() {
                         Ok(conn) => db::queries::rankings_stale(
                             &conn,
                             &api::ranking::RANKING_TERMS,

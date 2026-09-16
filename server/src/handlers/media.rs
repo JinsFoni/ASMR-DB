@@ -115,7 +115,7 @@ pub async fn asmr_file(
 
     // 从 DB 读 asmr.one token、代理配置与 API 地址
     let (token, proxy, api_base) = {
-        let conn = state.db.lock().map_err(AppError::new);
+        let conn = state.db.get().map_err(AppError::new);
         match conn {
             Ok(c) => (
                 queries::get_setting(&c, "asmr_one_token")

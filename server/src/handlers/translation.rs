@@ -49,7 +49,7 @@ pub fn spawn_scheduler(state: SharedState) {
         loop {
             let cfg = tokio::task::spawn_blocking({
                 let state = state.clone();
-                move || match state.db.lock() {
+                move || match state.db.get() {
                     Ok(conn) => LlmConfig::from_conn(&conn),
                     Err(_) => LlmConfig::default(),
                 }
@@ -61,7 +61,7 @@ pub fn spawn_scheduler(state: SharedState) {
                 let processing = match tokio::task::spawn_blocking({
                     let state = state.clone();
                     move || -> Result<i64, AppError> {
-                        let conn = state.db.lock().map_err(AppError::new)?;
+                        let conn = state.db.get().map_err(AppError::new)?;
                         queries::count_processing_translations(&conn).map_err(AppError::new)
                     }
                 })
@@ -76,7 +76,7 @@ pub fn spawn_scheduler(state: SharedState) {
                     let claimed = match tokio::task::spawn_blocking({
                         let state = state.clone();
                         move || -> Result<Vec<(i64, i64)>, AppError> {
-                            let conn = state.db.lock().map_err(AppError::new)?;
+                            let conn = state.db.get().map_err(AppError::new)?;
                             queries::claim_pending_translations(&conn, free)
                                 .map_err(AppError::new)
                         }
@@ -105,7 +105,7 @@ pub fn spawn_scheduler(state: SharedState) {
 async fn process_task(state: SharedState, cfg: LlmConfig, task_id: i64, work_id: i64) {
     let st = state.clone();
     let work = tokio::task::spawn_blocking(move || -> Result<(String, Option<String>), AppError> {
-        let conn = st.db.lock().map_err(AppError::new)?;
+        let conn = st.db.get().map_err(AppError::new)?;
         let view = queries::get_work(&conn, work_id)?
             .ok_or_else(|| AppError("作品不存在".to_string()))?;
         let source_title = view
@@ -206,7 +206,7 @@ async fn process_task(state: SharedState, cfg: LlmConfig, task_id: i64, work_id:
 
     // 落库：写入作品中文字段 + 任务成功
     let result = tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::set_work_translation(
             &conn,
             work_id,
@@ -239,7 +239,7 @@ async fn fail_task(state: &SharedState, task_id: i64, error: &str) {
     let state = state.clone();
     let error = error.to_string();
     let _ = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         conn.execute(
             "UPDATE translation_tasks SET status='failed', error=?1, updated_at=datetime('now') WHERE id=?2",
             task_error_params(&error, task_id),
@@ -275,7 +275,7 @@ pub async fn list_translations(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let page = q.page.unwrap_or(1).max(1);
     let (items, total) = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::list_translation_tasks(&conn, page, PER_PAGE).map_err(AppError::new)
     })
     .await
@@ -300,7 +300,7 @@ pub async fn enqueue(
     Json(body): Json<EnqueueBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let queued = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let exists = conn
             .query_row(
                 "SELECT 1 FROM works WHERE id=?1",
@@ -328,7 +328,7 @@ pub async fn enqueue_missing(
     State(state): State<SharedState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let n = tokio::task::spawn_blocking(move || -> Result<usize, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::enqueue_missing_translations(&conn).map_err(AppError::new)
     })
     .await
@@ -342,7 +342,7 @@ pub async fn retry(
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let ok = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::retry_translation(&conn, id).map_err(AppError::new)
     })
     .await
@@ -360,7 +360,7 @@ pub async fn delete_task(
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let ok = tokio::task::spawn_blocking(move || -> Result<bool, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::delete_translation(&conn, id).map_err(AppError::new)
     })
     .await

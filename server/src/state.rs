@@ -3,12 +3,17 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use r2d2_sqlite::SqliteConnectionManager;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-/// 全局共享状态：SQLite 连接 + 下载管理器 + 数据库路径。
+/// SQLite 连接池：WAL 模式下多读并发、读写不互斥，
+/// handler 通过 pool.get() 短借连接，避免全局排队。
+pub type DbPool = r2d2::Pool<SqliteConnectionManager>;
+
+/// 全局共享状态：SQLite 连接池 + 下载管理器 + 数据库路径。
 pub struct AppState {
-    pub db: Mutex<rusqlite::Connection>,
+    pub db: DbPool,
     pub manager: DownloadManager,
     /// 数据库文件绝对路径（下载线程等会用独立连接访问）
     pub db_path: PathBuf,

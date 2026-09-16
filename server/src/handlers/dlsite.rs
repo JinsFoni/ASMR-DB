@@ -37,7 +37,7 @@ pub async fn get_ranking(
     let limit = q.limit.unwrap_or(20).clamp(1, 100);
     let (items, last_fetched) = tokio::task::spawn_blocking(
         move || -> Result<(Vec<_>, Option<String>), AppError> {
-            let conn = state.db.lock().map_err(AppError::new)?;
+            let conn = state.db.get().map_err(AppError::new)?;
             let items = queries::list_rankings(&conn, &term, limit)?;
             let last = queries::ranking_last_fetch(&conn, &term)?;
             Ok((items, last))
@@ -77,7 +77,7 @@ pub async fn do_refresh(
     let proxy = tokio::task::spawn_blocking({
         let state = state.clone();
         move || -> Result<ProxyConfig, AppError> {
-            let conn = state.db.lock().map_err(AppError::new)?;
+            let conn = state.db.get().map_err(AppError::new)?;
             Ok(ProxyConfig::from_conn(&conn))
         }
     })
@@ -101,7 +101,7 @@ pub async fn do_refresh(
                 tokio::task::spawn_blocking({
                     let state = state.clone();
                     move || -> Result<(), AppError> {
-                        let conn = state.db.lock().map_err(AppError::new)?;
+                        let conn = state.db.get().map_err(AppError::new)?;
                         queries::replace_rankings(&conn, &db_term, &entries)?;
                         Ok(())
                     }

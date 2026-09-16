@@ -5,6 +5,15 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+/// 每条池连接的初始化：WAL + 外键 + 落盘策略 + 忙等待超时。
+pub fn configure_conn(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    Ok(())
+}
+
 /// 打开（或创建）SQLite 数据库并执行迁移。
 pub fn init_database(db_path: &Path) -> Result<Connection, Box<dyn std::error::Error>> {
     if let Some(parent) = db_path.parent() {
@@ -13,11 +22,14 @@ pub fn init_database(db_path: &Path) -> Result<Connection, Box<dyn std::error::E
         }
     }
     let conn = Connection::open(db_path)?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    configure_conn(&conn)?;
     migrate(&conn)?;
     Ok(conn)
+}
+
+/// 对已有连接执行迁移（供数据库恢复后对齐表结构）。
+pub fn migrate_conn(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+    migrate(conn)
 }
 
 /// Create all tables / indexes if they do not exist yet.

@@ -27,7 +27,7 @@ pub async fn list_works(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let items = tokio::task::spawn_blocking(
         move || -> Result<(Vec<WorkView>, u32), AppError> {
-            let conn = state.db.lock().map_err(AppError::new)?;
+            let conn = state.db.get().map_err(AppError::new)?;
             let (items, total) = queries::list_works(
                 &conn,
                 q.search.as_deref(),
@@ -53,7 +53,7 @@ pub async fn get_work(
     Path(id): Path<i64>,
 ) -> Result<Json<Option<WorkView>>, AppError> {
     let view = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::get_work(&conn, id).map_err(AppError::new)
     })
     .await
@@ -66,7 +66,7 @@ pub async fn update_work(
     Json(work): Json<Work>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::update_work(&conn, &work).map_err(AppError::new)
     })
     .await
@@ -79,7 +79,7 @@ pub async fn delete_work(
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::delete_work(&conn, id).map_err(AppError::new)
     })
     .await
@@ -97,7 +97,7 @@ pub async fn delete_works(
     Json(body): Json<DeleteWorksBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::delete_works(&conn, &body.ids).map_err(AppError::new)
     })
     .await
@@ -110,7 +110,7 @@ pub async fn get_download_status(
     Path(id): Path<i64>,
 ) -> Result<Json<String>, AppError> {
     let status = tokio::task::spawn_blocking(move || -> Result<String, AppError> {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         let (status, _) = queries::work_download_status(&conn, id).map_err(AppError::new)?;
         Ok(status)
     })
@@ -125,7 +125,7 @@ pub async fn list_groups(
     State(state): State<SharedState>,
 ) -> Result<Json<Vec<crate::db::models::Group>>, AppError> {
     let groups = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::list_groups(&conn).map_err(AppError::new)
     })
     .await
@@ -145,7 +145,7 @@ pub async fn create_group(
     Json(body): Json<CreateGroupBody>,
 ) -> Result<Json<i64>, AppError> {
     let id = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::create_group(
             &conn,
             &body.name,
@@ -170,7 +170,7 @@ pub async fn set_work_group(
     Json(body): Json<SetWorkGroupBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::set_work_group(&conn, work_id, body.group_id).map_err(AppError::new)
     })
     .await
@@ -183,7 +183,7 @@ pub async fn delete_group(
     Path(group_id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::delete_group(&conn, group_id).map_err(AppError::new)
     })
     .await
@@ -195,7 +195,7 @@ pub async fn delete_group(
 
 pub async fn list_tags(State(state): State<SharedState>) -> Result<Json<Vec<Tag>>, AppError> {
     let tags = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::list_tags(&conn).map_err(AppError::new)
     })
     .await
@@ -214,7 +214,7 @@ pub async fn create_tag(
     Json(body): Json<CreateTagBody>,
 ) -> Result<Json<i64>, AppError> {
     let id = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::create_tag(&conn, &body.name, &body.color).map_err(AppError::new)
     })
     .await
@@ -234,7 +234,7 @@ pub async fn assign_tag(
     Json(body): Json<AssignTagBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::assign_tag(&conn, work_id, body.tag_id).map_err(AppError::new)
     })
     .await
@@ -247,7 +247,7 @@ pub async fn unassign_tag(
     Path((work_id, tag_id)): Path<(i64, i64)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::unassign_tag(&conn, work_id, tag_id).map_err(AppError::new)
     })
     .await
@@ -260,7 +260,7 @@ pub async fn delete_tag(
     Path(tag_id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::delete_tag(&conn, tag_id).map_err(AppError::new)
     })
     .await
@@ -274,7 +274,7 @@ pub async fn list_actors(
     State(state): State<SharedState>,
 ) -> Result<Json<Vec<String>>, AppError> {
     let actors = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::list_all_actors(&conn).map_err(AppError::new)
     })
     .await
@@ -287,7 +287,7 @@ pub async fn list_tracks(
     Path(work_id): Path<i64>,
 ) -> Result<Json<Vec<Track>>, AppError> {
     let tracks = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::list_tracks(&conn, work_id).map_err(AppError::new)
     })
     .await
@@ -308,7 +308,7 @@ pub async fn save_play_progress(
     Json(body): Json<SaveProgressBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::save_play_progress(&conn, work_id, body.track_id, body.position)
             .map_err(AppError::new)
     })
@@ -322,7 +322,7 @@ pub async fn get_play_progress(
     Path(work_id): Path<i64>,
 ) -> Result<Json<Option<crate::db::models::PlayHistory>>, AppError> {
     let progress = tokio::task::spawn_blocking(move || {
-        let conn = state.db.lock().map_err(AppError::new)?;
+        let conn = state.db.get().map_err(AppError::new)?;
         queries::get_play_progress(&conn, work_id).map_err(AppError::new)
     })
     .await
@@ -336,7 +336,7 @@ pub async fn scan_audio_tracks(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let result = tokio::task::spawn_blocking(
         move || -> Result<serde_json::Value, AppError> {
-            let conn = state.db.lock().map_err(AppError::new)?;
+            let conn = state.db.get().map_err(AppError::new)?;
             let local_path: Option<String> = conn
                 .query_row(
                     "SELECT local_path FROM local_files WHERE work_id = ?1 AND download_status = 'downloaded' ORDER BY id DESC LIMIT 1",
@@ -438,7 +438,7 @@ pub(crate) async fn get_asmr_ctx(state: &SharedState) -> Result<AsmrCtx, AppErro
     let state2 = state.clone();
     let (mut token, proxy, api_base, username, password) = tokio::task::spawn_blocking(
         move || -> Result<_, AppError> {
-            let conn = state2.db.lock().map_err(AppError::new)?;
+            let conn = state2.db.get().map_err(AppError::new)?;
             let get = |k: &str| {
                 queries::get_setting(&conn, k).ok().flatten().unwrap_or_default()
             };
@@ -494,7 +494,7 @@ pub(crate) async fn asmr_relogin(
     let state2 = state.clone();
     let token2 = token.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = state2.db.lock().map_err(AppError::new)?;
+        let conn = state2.db.get().map_err(AppError::new)?;
         queries::set_setting(&conn, "asmr_one_token", &token2).map_err(AppError::new)
     })
     .await
