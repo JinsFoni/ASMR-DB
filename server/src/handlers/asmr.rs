@@ -216,7 +216,7 @@ pub async fn work_detail(
     let ctx = get_asmr_ctx(&state).await?;
     let (api_base, proxy, token) = (ctx.api_base.clone(), ctx.proxy.clone(), ctx.token.clone());
     let detail = crate::api::cache::asmrcache::work_detail()
-        .get_or_fetch(&format!("work:{id}"), move || async move {
+        .get_or_fetch(&format!("work:{}:{id}", ctx.api_base), move || async move {
             tokio::task::spawn_blocking(move || {
                 asmr_online::fetch_work_detail(&api_base, &token, &proxy, id)
             })

@@ -388,7 +388,7 @@ async fn fetch_asmr_tracks_json(
     let (api_base, proxy, token) = (ctx.api_base.clone(), ctx.proxy.clone(), ctx.token.clone());
     let rj = rj.to_string();
         crate::api::cache::asmrcache::tracks_json()
-        .get_or_fetch(&format!("tracks:{}", rj.to_uppercase()), move || async move {
+        .get_or_fetch(&format!("tracks:{}:{}", api_base, rj.to_uppercase()), move || async move {
             tokio::task::spawn_blocking(move || {
                 crate::api::asmrone::fetch_tracks_json(&rj, Some(&token), &proxy, &api_base)
             })

@@ -93,16 +93,22 @@ pub fn login(
 }
 
 fn build_client(proxy: &ProxyConfig) -> Result<reqwest::blocking::Client, Box<dyn Error>> {
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(reqwest::header::USER_AGENT, USER_AGENT.parse()?);
-    headers.insert(reqwest::header::ACCEPT, "text/html,application/json,application/xhtml+xml,*/*;q=0.8".parse()?);
-    headers.insert(reqwest::header::ACCEPT_LANGUAGE, "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7".parse()?);
-    headers.insert(reqwest::header::REFERER, "https://www.asmr.one/".parse()?);
-    let builder = reqwest::blocking::Client::builder()
-        .default_headers(headers)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(std::time::Duration::from_secs(30));
-    Ok(proxy.apply_blocking(builder, ProxyTarget::AsmrOne).build()?)
+    crate::api::http_client::shared_blocking_client("asmrone", proxy, || {
+        // header 值均为静态常量，必然合法，可直接 unwrap（同 asmr_online.rs）
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::USER_AGENT, USER_AGENT.parse().unwrap());
+        headers.insert(reqwest::header::ACCEPT, "text/html,application/json,application/xhtml+xml,*/*;q=0.8".parse().unwrap());
+        headers.insert(reqwest::header::ACCEPT_LANGUAGE, "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7".parse().unwrap());
+        headers.insert(reqwest::header::REFERER, "https://www.asmr.one/".parse().unwrap());
+        let builder = reqwest::blocking::Client::builder()
+            .default_headers(headers)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .timeout(std::time::Duration::from_secs(30));
+        proxy.apply_blocking(builder, ProxyTarget::AsmrOne)
+            .build()
+            .map_err(|e| format!("构建请求客户端失败: {e}"))
+    })
+    .map_err(|e| e.into())
 }
 
 fn dlsite_url(rj: &str) -> String {

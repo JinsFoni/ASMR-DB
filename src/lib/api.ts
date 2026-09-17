@@ -48,6 +48,48 @@ function get<T>(path: string): Promise<T> {
   return request<T>(path);
 }
 
+// ============================ 请求级缓存 ============================
+
+/**
+ * 短 TTL 内存缓存 + 单飞去重，用于「数据在短时间内不会变化」的 GET：
+ * - settings：每次进入详情页都会探测一次 token 配置，实际上极少变化；
+ * - 外网穿透型详情数据（asmr.one 详情/音轨/文件树、DLsite 简介/预览）：
+ *   详情→详情往返、返回列表再进同一作品时避免重复请求。
+ * 后端本身也有 TTL 缓存，这里省的是 HTTP 往返与前端串行等待。
+ * 写操作（保存设置、导入作品）后调用对应 invalidate 函数防止脏读。
+ */
+type CacheEntry = { value: unknown; expiresAt: number };
+const cacheMap = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<unknown>>();
+const TTL_MS = 60_000;
+
+async function cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const hit = cacheMap.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value as T;
+  const running = inflight.get(key);
+  if (running) return running as Promise<T>;
+  const p = fetcher()
+    .then((v) => {
+      cacheMap.set(key, { value: v, expiresAt: Date.now() + TTL_MS });
+      return v;
+    })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
+/** 使外网型详情缓存失效（导入/下载作品后调用，避免展示过期元数据）。 */
+export function invalidateExternalCache(): void {
+  for (const k of cacheMap.keys()) {
+    if (k.startsWith("ext:")) cacheMap.delete(k);
+  }
+}
+
+/** 使 settings 缓存失效（保存设置后调用）。 */
+function invalidateSettingsCache(): void {
+  cacheMap.delete("settings");
+}
+
 function post<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(path, {
     method: "POST",
@@ -188,11 +230,16 @@ export function getPlayProgress(workId: number): Promise<PlayHistory | null> {
  * 本服务的代理路径 /api/asmr/file/{hash}（服务端注入 Token 并透传 Range）。
  */
 export function listAsmroneTracks(rjCode: string): Promise<Track[]> {
-  return get(`/api/asmr/tracks${qs({ rj: rjCode })}`);
+  // 后端已回 CDN URL，音轨列表在一次会话内不变 → 短 TTL 缓存
+  return cached(`ext:asmr-tracks:${rjCode.toUpperCase()}`, () =>
+    get(`/api/asmr/tracks${qs({ rj: rjCode })}`)
+  );
 }
 
 export function listAsmroneTree(rjCode: string): Promise<AsmrTreeNode[]> {
-  return get(`/api/asmr/tree${qs({ rj: rjCode })}`);
+  return cached(`ext:asmr-tree:${rjCode.toUpperCase()}`, () =>
+    get(`/api/asmr/tree${qs({ rj: rjCode })}`)
+  );
 }
 
 export function downloadAsmroneFiles(
@@ -230,11 +277,18 @@ export function importByRj(
   rjCode: string,
   source?: string
 ): Promise<{ ok: boolean; work: WorkView }> {
-  return post("/api/import/by-rj", { rjCode, source });
+  return post<{ ok: boolean; work: WorkView }>("/api/import/by-rj", { rjCode, source }).then((r) => {
+    // 新元数据已入库，旧的外网型缓存（详情/预览）作废
+    invalidateExternalCache();
+    return r;
+  });
 }
 
 export function previewByRj(rjCode: string, source?: string): Promise<ScrapedWork> {
-  return post("/api/import/preview", { rjCode, source });
+  return cached(
+    `ext:preview:${rjCode.toUpperCase()}:${source ?? "dlsite"}`,
+    () => post("/api/import/preview", { rjCode, source })
+  );
 }
 
 export function scanFolder(folder: string): Promise<{ items: ScannedItem[]; count: number }> {
@@ -327,15 +381,22 @@ export function getSettings(): Promise<{
   llm_auto: boolean;
   llm_prompt: string | null;
 }> {
-  return get("/api/settings");
+  // 设置页与本站各处（如在线音轨探测）都频繁读取，实际极少变化 → 短 TTL 缓存
+  return cached("settings", () => get("/api/settings"));
 }
 
 export function setAsmrToken(token: string): Promise<void> {
-  return post("/api/settings/asmr-token", { token });
+  return post<void>("/api/settings/asmr-token", { token }).then((r) => {
+    invalidateSettingsCache();
+    return r;
+  });
 }
 
 export function clearAsmrToken(): Promise<void> {
-  return del("/api/settings/asmr-token");
+  return del<void>("/api/settings/asmr-token").then((r) => {
+    invalidateSettingsCache();
+    return r;
+  });
 }
 
 export function setSettings(
@@ -354,7 +415,7 @@ export function setSettings(
     prompt?: string;
   }
 ): Promise<void> {
-  return post("/api/settings", {
+  return post<void>("/api/settings", {
     theme,
     downloadDir,
     proxyUrl: proxy?.url,
@@ -372,6 +433,9 @@ export function setSettings(
     llmThreads: llm?.threads,
     llmAuto: llm?.auto,
     llmPrompt: llm?.prompt,
+  }).then((r) => {
+    invalidateSettingsCache();
+    return r;
   });
 }
 
@@ -454,7 +518,7 @@ export function asmrAccount(
 }
 
 export function asmrWorkDetail(id: number | string): Promise<AsmrOnlineWork> {
-  return get(`/api/asmr/work/${id}`);
+  return cached(`ext:asmr-work:${id}`, () => get(`/api/asmr/work/${id}`));
 }
 
 // ---------- DLsite 排行榜 ----------
@@ -471,9 +535,11 @@ export function refreshDlsiteRanking(term?: string): Promise<{ ok: boolean; refr
 
 /** 抓取 DLsite 作品页的完整「作品内容」简介（asmr.one API 不提供简介，用它补充）。 */
 export function getDlsiteDescription(rjCode: string): Promise<string> {
-  return get<{ description: string }>(
-    `/api/dlsite/description${qs({ rj: rjCode })}`
-  ).then((r) => r.description);
+  return cached(`ext:dlsite-desc:${rjCode.toUpperCase()}`, () =>
+    get<{ description: string }>(
+      `/api/dlsite/description${qs({ rj: rjCode })}`
+    ).then((r) => r.description)
+  );
 }
 
 // ---------- 服务端目录浏览 ----------

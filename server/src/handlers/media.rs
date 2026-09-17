@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use tokio::io::AsyncReadExt;
 
 use crate::db::queries;
-use crate::state::{AppError, SharedState};
+use crate::state::SharedState;
 
 // ============================= 本地音频流 =============================
 
@@ -113,22 +113,30 @@ pub async fn asmr_file(
         return (StatusCode::BAD_REQUEST, "bad file hash").into_response();
     }
 
-    // 从 DB 读 asmr.one token、代理配置与 API 地址
+    // 从 DB 读 asmr.one token、代理配置与 API 地址（spawn_blocking：池满时 pool.get()
+    // 会阻塞，不能卡在 async executor 线程上）
     let (token, proxy, api_base) = {
-        let conn = state.db.get().map_err(AppError::new);
-        match conn {
-            Ok(c) => (
-                queries::get_setting(&c, "asmr_one_token")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default(),
-                crate::api::proxy::ProxyConfig::from_conn(&c),
-                crate::api::asmrone::normalize_api_base(
-                    queries::get_setting(&c, "asmr_one_address").ok().flatten().as_deref(),
+        let state = state.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = state.db.get();
+            match conn {
+                Ok(c) => (
+                    queries::get_setting(&c, "asmr_one_token")
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
+                    crate::api::proxy::ProxyConfig::from_conn(&c),
+                    crate::api::asmrone::normalize_api_base(
+                        queries::get_setting(&c, "asmr_one_address").ok().flatten().as_deref(),
+                    ),
                 ),
-            ),
-            Err(_) => (String::new(), Default::default(), crate::api::asmrone::DEFAULT_API_BASE.to_string()),
-        }
+                Err(_) => (String::new(), Default::default(), crate::api::asmrone::DEFAULT_API_BASE.to_string()),
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            (String::new(), Default::default(), crate::api::asmrone::DEFAULT_API_BASE.to_string())
+        })
     };
 
     let builder = reqwest::Client::builder()

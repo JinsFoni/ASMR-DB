@@ -9,12 +9,17 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 struct Entry<V> {
     value: Arc<Result<V, String>>,
     expires_at: Instant,
+    inserted_at: Instant,
 }
+
+/// 条目容量上限：超出时先清过期，仍超则淘汰最早插入的条目。
+/// tracks JSON 单条可达几百 KB，无上限的话长会话刷几百个作品会积累几十 MB。
+const MAX_ENTRIES: usize = 256;
 
 pub struct TtlCache<V> {
     ttl: Duration,
@@ -49,10 +54,28 @@ impl<V: Clone + Send + Sync + 'static> TtlCache<V> {
 
     fn store(&self, key: &str, value: Arc<Result<V, String>>) {
         let ttl = if value.is_ok() { self.ttl } else { FAILURE_TTL };
-        self.map.lock().unwrap().insert(
+        let now = Instant::now();
+        let mut map = self.map.lock().unwrap();
+        map.insert(
             key.to_string(),
-            Entry { value, expires_at: Instant::now() + ttl },
+            Entry { value, expires_at: now + ttl, inserted_at: now },
         );
+        if map.len() > MAX_ENTRIES {
+            // 先清过期条目，仍超限则按插入顺序淘汰最旧的
+            map.retain(|_, e| e.expires_at > now);
+            while map.len() > MAX_ENTRIES {
+                let oldest = map
+                    .iter()
+                    .min_by_key(|(_, e)| e.inserted_at)
+                    .map(|(k, _)| k.clone());
+                match oldest {
+                    Some(k) => {
+                        map.remove(&k);
+                    }
+                    None => break,
+                }
+            }
+        }
     }
 
     /// 取值：命中新鲜缓存直接返回；否则回源（同 key 并发请求合并为一次）。
@@ -218,5 +241,20 @@ mod tests {
             assert_eq!(h.await.unwrap(), 7);
         }
         assert_eq!(n.load(Ordering::SeqCst), 1, "并发请求应只回源一次");
+    }
+
+    #[tokio::test]
+    async fn evicts_oldest_when_over_capacity() {
+        let c: TtlCache<u32> = TtlCache::new(Duration::from_secs(60));
+        for i in 0..300u32 {
+            c.get_or_fetch(&format!("k{i}"), || async move {
+                Ok::<_, String>(i)
+            })
+            .await
+            .unwrap();
+        }
+        // 最早插入的 44 条应被淘汰（300 - 256），近期条目仍在
+        assert!(c.get_fresh("k0", Instant::now()).is_none());
+        assert!(c.get_fresh("k299", Instant::now()).is_some());
     }
 }

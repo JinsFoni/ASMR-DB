@@ -58,19 +58,21 @@ pub struct AsmrPlaylist {
 }
 
 fn build_client(proxy: &ProxyConfig) -> Result<reqwest::blocking::Client, String> {
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        reqwest::header::REFERER,
-        "https://www.asmr.one/".parse().unwrap(),
-    );
-    let builder = reqwest::blocking::Client::builder()
-        .user_agent(USER_AGENT)
-        .default_headers(headers)
-        .timeout(std::time::Duration::from_secs(30));
-    proxy
-        .apply_blocking(builder, ProxyTarget::AsmrOne)
-        .build()
-        .map_err(|e| format!("构建请求客户端失败: {e}"))
+    crate::api::http_client::shared_blocking_client("asmr_online", proxy, || {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::REFERER,
+            "https://www.asmr.one/".parse().unwrap(),
+        );
+        let builder = reqwest::blocking::Client::builder()
+            .user_agent(USER_AGENT)
+            .default_headers(headers)
+            .timeout(std::time::Duration::from_secs(30));
+        proxy
+            .apply_blocking(builder, ProxyTarget::AsmrOne)
+            .build()
+            .map_err(|e| format!("构建请求客户端失败: {e}"))
+    })
 }
 
 /// GET 请求并解析 JSON；非 2xx 返回 "HTTP {status} ..." 格式错误（401 由调用方识别重登）。

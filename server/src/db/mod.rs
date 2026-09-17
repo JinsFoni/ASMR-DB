@@ -195,6 +195,8 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
 
         -- ==================== 索引 ====================
         CREATE INDEX IF NOT EXISTS idx_works_rj ON works(rj_code);
+        -- get_work_by_rj 用 COLLATE NOCASE 匹配，BINARY 索引对其无效（全表扫描），需专用索引
+        CREATE INDEX IF NOT EXISTS idx_works_rj_nocase ON works(rj_code COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_works_circle ON works(circle_name);
         CREATE INDEX IF NOT EXISTS idx_works_type ON works(work_type);
         CREATE INDEX IF NOT EXISTS idx_audio_work ON audio_tracks(work_id);

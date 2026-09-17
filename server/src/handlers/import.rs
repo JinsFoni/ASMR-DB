@@ -11,6 +11,25 @@ use crate::db::models::{ScrapedWork, Track};
 use crate::db::queries;
 use crate::state::{AppError, SharedState};
 
+/// 读取 asmr.one 相关 settings（token / api_base / 代理）。
+/// spawn_blocking：池满时 pool.get() 会阻塞，不能卡在 async executor 线程上。
+async fn load_asmr_settings(state: &SharedState) -> Result<(String, ProxyConfig, String), AppError> {
+    let state = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = state.db.get().map_err(AppError::new)?;
+        let token = queries::get_setting(&conn, "asmr_one_token")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let asmr_api_base = crate::api::asmrone::normalize_api_base(
+            queries::get_setting(&conn, "asmr_one_address").ok().flatten().as_deref(),
+        );
+        Ok((token, ProxyConfig::from_conn(&conn), asmr_api_base))
+    })
+    .await
+    .map_err(AppError::new)?
+}
+
 /// 根据数据源抓取作品元数据。
 /// source: "asmrone" 强制 asmr.one；"dlsite" / "auto" / None 优先尝试 DLsite，
 /// 若 DLsite 抓取失败（如网络被拦截/403/地区限制），自动回退 asmr.one。
@@ -55,25 +74,25 @@ pub async fn import_by_rj(
     State(state): State<SharedState>,
     Json(body): Json<RjSourceBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let (token, proxy, asmr_api_base) = {
-        let conn = state.db.get().map_err(AppError::new)?;
-        let token = queries::get_setting(&conn, "asmr_one_token")
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        let asmr_api_base = crate::api::asmrone::normalize_api_base(
-            queries::get_setting(&conn, "asmr_one_address").ok().flatten().as_deref(),
-        );
-        (token, ProxyConfig::from_conn(&conn), asmr_api_base)
-    };
-    let rj = body.rj_code;
+    let (token, proxy, asmr_api_base) = load_asmr_settings(&state).await?;
+    let rj = body.rj_code.trim().to_uppercase();
     let source = body.source;
-    let scraped = tokio::task::spawn_blocking(move || {
-        fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
-            .map_err(AppError::new)
-    })
-    .await
-    .map_err(AppError::new)??;
+    // 与 preview_by_rj 共用同一份短 TTL 缓存（key 相同）：
+    // 「预览→确认导入」流程对外网只抓取一次同一 RJ 号。
+    let scraped = crate::api::cache::asmrcache::scraped_preview()
+        .get_or_fetch(&format!("{}:{}", rj, source.as_deref().unwrap_or("dlsite")), {
+            let rj = rj.clone();
+            move || async move {
+                tokio::task::spawn_blocking(move || {
+                    fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
+                        .map_err(|e| e.to_string())
+                })
+                .await
+                .map_err(|e| e.to_string())?
+            }
+        })
+        .await
+        .map_err(AppError::new)?;
 
     let view = tokio::task::spawn_blocking(move || {
         let conn = state.db.get().map_err(AppError::new)?;
@@ -111,17 +130,7 @@ pub async fn preview_by_rj(
     State(state): State<SharedState>,
     Json(body): Json<RjSourceBody>,
 ) -> Result<Json<ScrapedWork>, AppError> {
-    let (token, proxy, asmr_api_base) = {
-        let conn = state.db.get().map_err(AppError::new)?;
-        let token = queries::get_setting(&conn, "asmr_one_token")
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        let asmr_api_base = crate::api::asmrone::normalize_api_base(
-            queries::get_setting(&conn, "asmr_one_address").ok().flatten().as_deref(),
-        );
-        (token, ProxyConfig::from_conn(&conn), asmr_api_base)
-    };
+    let (token, proxy, asmr_api_base) = load_asmr_settings(&state).await?;
     let rj = body.rj_code.trim().to_uppercase();
     let source = body.source;
     // 短 TTL 缓存：DLsite 详情页首屏即此请求（0.7–0.9s/次 → 命中后毫秒级）。

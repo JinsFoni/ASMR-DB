@@ -17,14 +17,16 @@ pub fn product_url(rj_code: &str) -> String {
 /// og:description 的 meta 又只有截断的一句话，只有作品页正文才是完整简介。
 pub fn fetch_work_description(rj_code: &str, proxy: &ProxyConfig) -> Result<String, String> {
     let rj = rj_code.trim().to_uppercase();
-    let builder = reqwest::blocking::Client::builder()
-        .user_agent(USER_AGENT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(std::time::Duration::from_secs(30));
-    let client = proxy
-        .apply_blocking(builder, ProxyTarget::Dlsite)
-        .build()
-        .map_err(|e| format!("构建请求客户端失败: {e}"))?;
+    let client = crate::api::http_client::shared_blocking_client("scraper-dlsite", proxy, || {
+        let builder = reqwest::blocking::Client::builder()
+            .user_agent(USER_AGENT)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .timeout(std::time::Duration::from_secs(30));
+        proxy
+            .apply_blocking(builder, ProxyTarget::Dlsite)
+            .build()
+            .map_err(|e| format!("构建请求客户端失败: {e}"))
+    })?;
 
     let url = product_url(&rj);
     let resp = client
@@ -121,11 +123,16 @@ fn strip_tags(html: &str) -> String {
 /// Fetch and parse metadata for a work given its RJ code.
 pub fn fetch_work_metadata(rj_code: &str, proxy: &ProxyConfig) -> Result<ScrapedWork, Box<dyn Error>> {
     let rj = rj_code.trim().to_uppercase();
-    let builder = reqwest::blocking::Client::builder()
-        .user_agent(USER_AGENT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(std::time::Duration::from_secs(30));
-    let client = proxy.apply_blocking(builder, ProxyTarget::Dlsite).build()?;
+    let client = crate::api::http_client::shared_blocking_client("scraper-dlsite", proxy, || {
+        let builder = reqwest::blocking::Client::builder()
+            .user_agent(USER_AGENT)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .timeout(std::time::Duration::from_secs(30));
+        proxy
+            .apply_blocking(builder, ProxyTarget::Dlsite)
+            .build()
+            .map_err(|e| format!("构建请求客户端失败: {e}"))
+    })?;
 
     let url = product_url(&rj);
     let resp = client.get(&url).send()?;

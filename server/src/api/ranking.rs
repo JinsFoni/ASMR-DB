@@ -19,11 +19,16 @@ pub fn fetch_ranking(term: &str, proxy: &ProxyConfig) -> Result<Vec<RankingEntry
     if !RANKING_TERMS.contains(&term) {
         return Err(format!("未知的榜单周期: {term}"));
     }
-    let builder = reqwest::blocking::Client::builder()
-        .user_agent(USER_AGENT)
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .timeout(std::time::Duration::from_secs(30));
-    let client = proxy.apply_blocking(builder, ProxyTarget::Dlsite).build().map_err(|e| e.to_string())?;
+    let client = crate::api::http_client::shared_blocking_client("ranking-dlsite", proxy, || {
+        let builder = reqwest::blocking::Client::builder()
+            .user_agent(USER_AGENT)
+            .redirect(reqwest::redirect::Policy::limited(5))
+            .timeout(std::time::Duration::from_secs(30));
+        proxy
+            .apply_blocking(builder, ProxyTarget::Dlsite)
+            .build()
+            .map_err(|e| e.to_string())
+    })?;
 
     let url = ranking_url(term);
     let resp = client.get(&url).send().map_err(|e| e.to_string())?;

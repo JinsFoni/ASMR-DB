@@ -155,7 +155,7 @@ const statusClass = computed(() => {
     <div class="flex gap-5">
       <!-- 封面（完整封面不裁切，与横版卡片一致；加宽并垂直居中避免信息列下方大片空白） -->
       <div class="w-72 shrink-0 self-center rounded-xl overflow-hidden bg-bg-hover border border-bg-border">
-        <img v-if="coverUrl" :src="coverUrl" class="w-full h-auto" />
+        <img v-if="coverUrl" :src="coverUrl" class="w-full h-auto" decoding="async" />
         <div v-else class="w-72 aspect-[4/3] flex items-center justify-center text-muted/40">
           <ImageOff :size="40" />
         </div>
