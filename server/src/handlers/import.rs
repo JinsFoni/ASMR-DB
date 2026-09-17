@@ -122,14 +122,24 @@ pub async fn preview_by_rj(
         );
         (token, ProxyConfig::from_conn(&conn), asmr_api_base)
     };
-    let rj = body.rj_code;
+    let rj = body.rj_code.trim().to_uppercase();
     let source = body.source;
-    let scraped = tokio::task::spawn_blocking(move || {
-        fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
-            .map_err(AppError::new)
-    })
-    .await
-    .map_err(AppError::new)??;
+    // 短 TTL 缓存：DLsite 详情页首屏即此请求（0.7–0.9s/次 → 命中后毫秒级）。
+    // key 含 source：asmrone 源与 DLsite 源的数据不同，不能互串。
+    let scraped = crate::api::cache::asmrcache::scraped_preview()
+        .get_or_fetch(&format!("{}:{}", rj, source.as_deref().unwrap_or("dlsite")), {
+            let rj = rj.clone();
+            move || async move {
+                tokio::task::spawn_blocking(move || {
+                    fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
+                        .map_err(|e| e.to_string())
+                })
+                .await
+                .map_err(|e| e.to_string())?
+            }
+        })
+        .await
+        .map_err(AppError::new)?;
     Ok(Json(scraped))
 }
 

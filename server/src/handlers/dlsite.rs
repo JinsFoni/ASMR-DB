@@ -56,6 +56,7 @@ pub struct DescriptionQuery {
 
 /// GET /api/dlsite/description?rj=RJxxx — 抓取 DLsite 作品页的完整「作品内容」简介。
 /// 供 ASMR ONE 在线详情页补充展示（asmr.one API 不提供作品简介）。
+/// 短 TTL 缓存：ASMR 详情页每次进入都会请求该简介（0.7s/次 → 命中后毫秒级）。
 pub async fn get_description(
     State(state): State<SharedState>,
     Query(q): Query<DescriptionQuery>,
@@ -70,12 +71,19 @@ pub async fn get_description(
     .await
     .map_err(AppError::new)??;
 
-    let rj = q.rj;
-    let description = tokio::task::spawn_blocking(move || {
-        crate::api::scraper::fetch_work_description(&rj, &proxy).map_err(AppError::new)
-    })
-    .await
-    .map_err(AppError::new)??;
+    let rj = q.rj.trim().to_uppercase();
+    let proxy2 = proxy.clone();
+    let rj2 = rj.clone();
+    let description = crate::api::cache::asmrcache::dlsite_description()
+        .get_or_fetch(&rj, move || async move {
+            tokio::task::spawn_blocking(move || {
+                crate::api::scraper::fetch_work_description(&rj2, &proxy2).map_err(|e| e.to_string())
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        })
+        .await
+        .map_err(AppError::new)?;
 
     Ok(Json(json!({ "description": description })))
 }

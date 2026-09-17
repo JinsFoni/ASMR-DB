@@ -208,16 +208,23 @@ fn work_to_online(w: Work) -> AsmrOnlineWork {
 }
 
 /// GET /api/asmr/work/{id} — 在线作品详情。
+/// 短 TTL 缓存：详情页反复浏览不再重复打外网（0.5s/次 → 命中后毫秒级）。
 pub async fn work_detail(
     State(state): State<SharedState>,
     Path(id): Path<i64>,
 ) -> Result<Json<AsmrOnlineWork>, AppError> {
     let ctx = get_asmr_ctx(&state).await?;
-    let (api_base, proxy) = (ctx.api_base.clone(), ctx.proxy.clone());
-    let detail = run_with_relogin(&state, move |token: &str| {
-        asmr_online::fetch_work_detail(&api_base, token, &proxy, id)
-    })
-    .await?;
+    let (api_base, proxy, token) = (ctx.api_base.clone(), ctx.proxy.clone(), ctx.token.clone());
+    let detail = crate::api::cache::asmrcache::work_detail()
+        .get_or_fetch(&format!("work:{id}"), move || async move {
+            tokio::task::spawn_blocking(move || {
+                asmr_online::fetch_work_detail(&api_base, &token, &proxy, id)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        })
+        .await
+        .map_err(AppError::new)?;
     let items = annotate_local(&state, vec![detail]).await?;
     Ok(Json(items.into_iter().next().unwrap_or_default()))
 }

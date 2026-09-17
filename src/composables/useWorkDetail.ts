@@ -95,6 +95,9 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
   const treeLoading = ref(false);
   const busyKey = ref<ActionKey | null>(null);
 
+  /** 加载代次：详情→详情 快速跳转时，丢弃上一轮迟到的后台请求结果 */
+  let loadSeq = 0;
+
   const showFileTree = ref(false);
   const showFolderPicker = ref(false);
   const showUrlInput = ref(false);
@@ -245,23 +248,21 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
       scrapedWork.value == null
   );
 
-  /** 探测 asmr.one 是否存在。spec §2.3：始终探测（不拉文件树），无 token 直接跳过。 */
-  async function probeOnline(): Promise<boolean> {
-    const rj = rjCode.value;
-    if (!rj) return false;
+  /**
+   * 拉取 asmr.one 在线音轨。spec §2.3：始终探测（不拉文件树）。
+   * 未配置 token / asmr.one 无此作品 / 报错 → 返回 null（静默降级）。
+   */
+  async function fetchOnlineTracks(rj: string): Promise<Track[] | null> {
     try {
       const s = await api.getSettings();
-      if (!s.asmr_one_token) return false;
+      if (!s.asmr_one_token) return null;
     } catch {
-      return false;
+      return null;
     }
     try {
-      const tracks = await api.listAsmroneTracks(rj);
-      onlineTracks.value = tracks;
-      return tracks.length > 0;
+      return await api.listAsmroneTracks(rj);
     } catch {
-      onlineTracks.value = [];
-      return false;
+      return null;
     }
   }
 
@@ -279,6 +280,7 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
   }
 
   async function load() {
+    const seq = ++loadSeq;
     loading.value = true;
     error.value = "";
     copied.value = false;
@@ -289,50 +291,110 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     localTracks.value = [];
     onlineTracks.value = [];
     fileTree.value = null;
+    // hasOnline 必须重置：详情→详情跳转时若残留 true，mode 会在探测完成前被误判为 asmr
+    hasOnline.value = false;
+    tracksLoading.value = false;
+    treeLoading.value = false;
+    showUrlInput.value = false;
+    dlUrl.value = "";
 
     const id = opts.id.value;
     try {
+      // ── 首屏关键路径：只等主数据（本地 DB 查询 / 单次详情请求）──
       if (opts.source === "work") {
         const v = await api.getWork(Number(id));
+        if (seq !== loadSeq) return;
         if (!v) {
           localView.value = null;
           return;
         }
         localView.value = v;
         localTracks.value = await api.listTracks(v.work.id);
+        if (seq !== loadSeq) return;
       } else if (opts.source === "asmr") {
         asmrWork.value = await api.asmrWorkDetail(id);
-        loadDlsiteDescription();
+        if (seq !== loadSeq) return;
+        await loadLocalState();
+        if (seq !== loadSeq) return;
       } else {
         scrapedWork.value = await api.previewByRj(id);
+        if (seq !== loadSeq) return;
+        await loadLocalState();
+        if (seq !== loadSeq) return;
       }
-      await loadLocalState();
-      tracksLoading.value = true;
-      hasOnline.value = await probeOnline();
-      // asmr 模式需要文件树以支撑「全部文件」标签页（spec §8）。
-      // 作品库本地有音轨时 mode === 'local'，按 spec §2.3 不拉树（避免「音频 N / 全部文件 M」来源不一致）。
-      if (mode.value === "asmr" && rjCode.value) {
-        fileTree.value = await api.listAsmroneTree(rjCode.value).catch(() => null);
-      }
-      tracksLoading.value = false;
     } catch (e) {
+      if (seq !== loadSeq) return;
       error.value = String(e);
     } finally {
-      loading.value = false;
+      // 只有当前代次才有权结束 loading（快速跳转时由新一轮接管）
+      if (seq === loadSeq) loading.value = false;
+    }
+
+    if (seq !== loadSeq || error.value) return;
+    // ── 次要数据后台补齐：绝不阻塞标题/封面/按钮的首屏渲染 ──
+    if (opts.source === "asmr") loadDlsiteDescription(seq);
+    loadSecondary(seq).catch(() => {});
+  }
+
+  /**
+   * 在线音轨 / 文件树等次要数据，走外网（0.5–1.2s），必须在首屏渲染后后台补齐。
+   * 此前这些请求串行 await 在 loading 门控内，导致整页（含标题）一起等待，体感明显变慢。
+   */
+  async function loadSecondary(seq: number) {
+    const rj = rjCode.value;
+    if (!rj) return;
+    // 作品库本地已有音轨：音轨区立即可用，无需 loading 占位
+    // （但仍需探测在线音轨，用于「在线播放 / ASMR One下载」按钮显隐）
+    const localReady = opts.source === "work" && localTracks.value.length > 0;
+    if (!localReady) tracksLoading.value = true;
+    try {
+      // asmr / DLsite 来源：音轨与文件树无依赖，并行拉取（与改动前两页一致）
+      if (opts.source !== "work") {
+        treeLoading.value = true;
+        const [t, tree] = await Promise.all([
+          fetchOnlineTracks(rj),
+          api.listAsmroneTree(rj).catch(() => null),
+        ]);
+        if (seq !== loadSeq) return;
+        onlineTracks.value = t ?? [];
+        hasOnline.value = (t?.length ?? 0) > 0;
+        fileTree.value = tree;
+        return;
+      }
+      // 作品库：先探测在线音轨（mode 依赖 hasOnline），再按 mode 决定是否拉文件树
+      const t = await fetchOnlineTracks(rj);
+      if (seq !== loadSeq) return;
+      onlineTracks.value = t ?? [];
+      hasOnline.value = (t?.length ?? 0) > 0;
+      // 文件树仅 asmr 模式需要（spec §8 音频/全部文件标签页）；
+      // 本地有音轨时 mode === 'local'，按 spec §2.3 不拉树。
+      if (mode.value === "asmr") {
+        treeLoading.value = true;
+        const tree = await api.listAsmroneTree(rj).catch(() => null);
+        if (seq === loadSeq) fileTree.value = tree;
+      }
+    } finally {
+      if (seq === loadSeq) {
+        tracksLoading.value = false;
+        treeLoading.value = false;
+      }
     }
   }
 
   /** ASMR ONE 页补充 DLsite 简介（asmr.one API 不提供简介） */
-  async function loadDlsiteDescription() {
+  async function loadDlsiteDescription(seq: number) {
     const rj = asmrWork.value?.rj_code;
-    if (!rj || descriptionLoading.value) return;
+    if (!rj) return;
     descriptionLoading.value = true;
     try {
-      dlsiteDescription.value = await api.getDlsiteDescription(rj);
+      const d = await api.getDlsiteDescription(rj);
+      // 代次守卫：详情→详情快速跳转时丢弃上一轮迟到的响应，避免 A 的简介写入 B 的页面
+      if (seq !== loadSeq) return;
+      dlsiteDescription.value = d;
     } catch {
-      dlsiteDescription.value = "";
+      if (seq === loadSeq) dlsiteDescription.value = "";
     } finally {
-      descriptionLoading.value = false;
+      if (seq === loadSeq) descriptionLoading.value = false;
     }
   }
 

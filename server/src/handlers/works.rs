@@ -378,6 +378,27 @@ pub async fn scan_audio_tracks(
 
 // ============================= asmr.one 在线试听 / 文件树 =============================
 
+/// 取 asmr.one `/api/tracks/{id}` 的原始 JSON（短 TTL 缓存 + 单飞去重）。
+/// 音轨与文件树是同一份数据的两种解析，缓存原始 JSON 使二者及反复浏览只回源一次。
+async fn fetch_asmr_tracks_json(
+    state: &SharedState,
+    rj: &str,
+) -> Result<serde_json::Value, AppError> {
+    let ctx = get_asmr_ctx(state).await?;
+    let (api_base, proxy, token) = (ctx.api_base.clone(), ctx.proxy.clone(), ctx.token.clone());
+    let rj = rj.to_string();
+        crate::api::cache::asmrcache::tracks_json()
+        .get_or_fetch(&format!("tracks:{}", rj.to_uppercase()), move || async move {
+            tokio::task::spawn_blocking(move || {
+                crate::api::asmrone::fetch_tracks_json(&rj, Some(&token), &proxy, &api_base)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        })
+        .await
+        .map_err(AppError::new)
+}
+
 /// 拉取 asmr.one 上某作品的音频文件列表，构造为临时 `Track` 返回给前端在线播放。
 /// `file_path` 直接用 asmr.one 公开 CDN 的 `mediaStreamUrl`（无需 token，支持 Range
 /// seek）；仅当 CDN URL 缺失时回退到本服务的代理路径 `/api/asmr/file/{hash}`。
@@ -385,13 +406,8 @@ pub async fn list_asmrone_tracks(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<Track>>, AppError> {
-    let ctx = get_asmr_ctx(&state).await?;
-    let files = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_audio_files(&q.rj, Some(&ctx.token), &ctx.proxy, &ctx.api_base)
-            .map_err(AppError::new)
-    })
-    .await
-    .map_err(AppError::new)??;
+    let v = fetch_asmr_tracks_json(&state, &q.rj).await?;
+    let files = crate::api::asmrone::collect_tracks_and_subtitles(&v);
 
     if files.is_empty() {
         return Err(AppError(
@@ -430,15 +446,8 @@ pub async fn list_asmrone_tree(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
 ) -> Result<Json<Vec<crate::api::asmrone::AsmrTreeNode>>, AppError> {
-    let ctx = get_asmr_ctx(&state).await?;
-    let rj = q.rj;
-    let tree = tokio::task::spawn_blocking(move || {
-        crate::api::asmrone::fetch_file_tree(&rj, Some(&ctx.token), &ctx.proxy, &ctx.api_base)
-            .map_err(AppError::new)
-    })
-    .await
-    .map_err(AppError::new)??;
-    Ok(Json(tree))
+    let v = fetch_asmr_tracks_json(&state, &q.rj).await?;
+    Ok(Json(crate::api::asmrone::build_file_tree(&v)))
 }
 
 /// asmr.one 请求上下文：token / 代理 / API 基址 / 登录凭据。

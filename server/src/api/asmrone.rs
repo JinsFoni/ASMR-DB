@@ -286,6 +286,18 @@ pub fn fetch_audio_files(
     proxy: &ProxyConfig,
     api_base: &str,
 ) -> Result<Vec<AsmrFile>, String> {
+    let v = fetch_tracks_json(rj_code, token, proxy, api_base)?;
+    Ok(collect_tracks_and_subtitles(&v))
+}
+
+/// 抓取 asmr.one tracks 端点的原始 JSON（音轨与文件树的共同数据源）。
+/// handlers 层缓存该 JSON，使 tracks/tree 两个视图及反复浏览只回源一次。
+pub fn fetch_tracks_json(
+    rj_code: &str,
+    token: Option<&str>,
+    proxy: &ProxyConfig,
+    api_base: &str,
+) -> Result<serde_json::Value, String> {
     let rj = rj_code.trim().to_uppercase();
     let work_id: u64 = rj
         .trim_start_matches("RJ")
@@ -303,10 +315,8 @@ pub fn fetch_audio_files(
     if !resp.status().is_success() {
         return Err(format!("asmr.one 文件列表返回 {}", resp.status()));
     }
-    let v: serde_json::Value = resp
-        .json()
-        .map_err(|e| format!("解析文件列表 JSON 失败: {e}"))?;
-    Ok(collect_tracks_and_subtitles(&v))
+    resp.json()
+        .map_err(|e| format!("解析文件列表 JSON 失败: {e}"))
 }
 
 struct RawAudioItem {
@@ -328,7 +338,7 @@ fn normalize_stem(name: &str) -> String {
 }
 
 /// 递归遍历 asmr.one tracks 文件树，收集音频与字幕节点并进行智能匹配。
-fn collect_tracks_and_subtitles(root: &serde_json::Value) -> Vec<AsmrFile> {
+pub fn collect_tracks_and_subtitles(root: &serde_json::Value) -> Vec<AsmrFile> {
     let mut audio_items: Vec<RawAudioItem> = Vec::new();
     let mut sub_items: Vec<RawSubItem> = Vec::new();
     let mut folder_stack: Vec<String> = Vec::new();
