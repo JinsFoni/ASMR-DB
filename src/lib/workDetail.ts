@@ -121,7 +121,7 @@ export function actionLabel(key: ActionKey, source: DetailSource): string {
     case "delete":
       return "删除";
     case "open-dlsite":
-      return source === "work" ? "DLsite 页面" : "DLsite";
+      return "DLsite";
     case "open-asmr":
       return "ASMR One";
   }

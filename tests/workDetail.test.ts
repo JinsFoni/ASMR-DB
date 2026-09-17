@@ -93,7 +93,7 @@ test("actions 场景2: 入库·DLsite（无在线播放、无 asmr 下载、无 
 });
 
 // 场景 4：作品库，本地有音轨，asmr.one 存在
-test("actions 场景4: 播放·下载·扫描音轨·关联本地·LLM翻译·在线播放·ASMR One下载·DLsite页面·ASMR One·删除", () => {
+test("actions 场景4: 播放·下载·扫描音轨·关联本地·LLM翻译·在线播放·ASMR One下载·DLsite·ASMR One·删除", () => {
   assert.deepEqual(
     resolveActions(
       input({ source: "work", mode: "local", hasOnline: true, hasLocalWork: true, hasRj: true })
@@ -133,7 +133,7 @@ test("actions 场景4b: 同场景4 去掉 在线播放 / ASMR One下载", () => 
 });
 
 // 场景 5：作品库，本地无音轨，asmr.one 不存在（无「播放」）
-test("actions 场景5: 下载·扫描音轨·关联本地·LLM翻译·DLsite页面·ASMR One·删除", () => {
+test("actions 场景5: 下载·扫描音轨·关联本地·LLM翻译·DLsite·ASMR One·删除", () => {
   assert.deepEqual(
     resolveActions(input({ source: "work", mode: "dlsite", hasOnline: false, hasRj: true })),
     [
@@ -149,7 +149,7 @@ test("actions 场景5: 下载·扫描音轨·关联本地·LLM翻译·DLsite页�
 });
 
 // 场景 6：作品库，本地无音轨，asmr.one 存在（无「播放」）
-test("actions 场景6: 在线播放·ASMR One下载·下载·扫描音轨·关联本地·LLM翻译·DLsite页面·ASMR One·删除", () => {
+test("actions 场景6: 在线播放·ASMR One下载·下载·扫描音轨·关联本地·LLM翻译·DLsite·ASMR One·删除", () => {
   assert.deepEqual(
     resolveActions(input({ source: "work", mode: "asmr", hasOnline: true, hasRj: true })),
     [
@@ -214,8 +214,8 @@ test("label: 在线播放（原「在线试听」改名）", () => {
   assert.equal(actionLabel("online-play", "work"), "在线播放");
 });
 
-test("label: DLsite 外链在作品库页叫「DLsite 页面」", () => {
-  assert.equal(actionLabel("open-dlsite", "work"), "DLsite 页面");
+test("label: DLsite 外链在作品库页叫「DLsite」", () => {
+  assert.equal(actionLabel("open-dlsite", "work"), "DLsite");
   assert.equal(actionLabel("open-dlsite", "dlsite"), "DLsite");
 });
 
