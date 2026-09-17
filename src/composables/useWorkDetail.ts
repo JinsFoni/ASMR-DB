@@ -138,6 +138,8 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
   );
 
   const subtitle = computed<string | null>(() => {
+    // 已翻译（有中文标题）时不展示日文原标题
+    if (rawWork.value?.title_zh) return null;
     const ja = rawWork.value?.title_ja ?? null;
     return ja && ja !== title.value ? ja : null;
   });
