@@ -120,3 +120,9 @@ body,
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* 视口外跳过渲染：列表卡片滚动性能优化（图片保持原始清晰度） */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
+}

@@ -177,6 +177,11 @@ onMounted(() => {
   scrollEl?.addEventListener("scroll", onScroll, { passive: true });
 });
 onActivated(() => {
+  // 详情页入库后返回：消费入库记录，原地补上「已入库」标识（KeepAlive 缓存不会重新拉数据）
+  for (const item of items.value) {
+    const id = item.rj_code ? worksStore.takeImported(item.rj_code) : null;
+    if (id != null) item.local_work_id = id;
+  }
   nextTick(() => {
     const restore = () => {
       if (scrollEl) scrollEl.scrollTop = savedScroll;

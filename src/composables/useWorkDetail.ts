@@ -435,13 +435,15 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     router.push({ name: "player" });
   }
 
+  /** 入库后跳转本地详情；用 replace 替换历史记录，浏览器返回直接回到浏览页（不经过在线详情中间页） */
   async function importWork() {
     const rj = rjCode.value;
     if (!rj) return;
     const res = await api.importByRj(rj);
     worksStore.fetchWorks();
     worksStore.loadTags();
-    router.push(`/work/${res.work.work.id}`);
+    worksStore.markImported(rj, res.work.work.id);
+    router.replace(`/work/${res.work.work.id}`);
   }
 
   function goLocal() {
@@ -461,6 +463,7 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
       const res = await api.importByRj(rj);
       worksStore.fetchWorks();
       worksStore.loadTags();
+      worksStore.markImported(rj, res.work.work.id);
       localView.value = res.work;
     }
     showFileTree.value = true;

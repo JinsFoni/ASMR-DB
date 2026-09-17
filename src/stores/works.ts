@@ -25,6 +25,24 @@ export const useWorksStore = defineStore("works", () => {
   const selectionMode = ref(false);
   const selectedIds = ref<Set<number>>(new Set());
 
+  /**
+   * 详情页入库记录：RJ 号 → 本地作品 id。
+   * 列表页被 KeepAlive 缓存，返回时不会重新请求；激活时消费此映射，
+   * 原地把对应卡片的 work_id/local_work_id 补上（「已入库」标识立即出现）。
+   */
+  const importedByRj = ref<Map<string, number>>(new Map());
+
+  function markImported(rjCode: string, workId: number) {
+    importedByRj.value.set(rjCode.toUpperCase(), workId);
+  }
+
+  function takeImported(rjCode: string): number | null {
+    const key = rjCode.toUpperCase();
+    const id = importedByRj.value.get(key);
+    if (id != null) importedByRj.value.delete(key);
+    return id ?? null;
+  }
+
   const pages = computed(() => Math.max(1, Math.ceil(total.value / perPage.value)));
 
   async function loadTags() {
@@ -140,6 +158,8 @@ export const useWorksStore = defineStore("works", () => {
     loadTags,
     loadGroups,
     fetchWorks,
+    markImported,
+    takeImported,
     applyFilter,
     removeWork,
     upsertWork,

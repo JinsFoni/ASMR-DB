@@ -36,7 +36,7 @@ const title = computed(() => props.item.title || props.item.rj_code);
 <template>
   <a
     :href="inLibrary ? `#/work/${item.work_id}` : `#/dlsite/work/${item.rj_code}`"
-    class="group block rounded-xl overflow-hidden border border-bg-border bg-bg-card hover:border-accent/50 hover:shadow-lg hover:shadow-accent/5 transition-all"
+    class="group cv-auto block rounded-xl overflow-hidden border border-bg-border bg-bg-card hover:border-accent/50 hover:shadow-lg hover:shadow-accent/5 transition-all"
     @click.prevent="emit('open', item)"
   >
     <!-- 封面（横版，完整不裁切，与作品库横版卡片一致） -->
