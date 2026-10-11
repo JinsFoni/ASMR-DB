@@ -113,9 +113,17 @@ const fmtDuration = (s: number | null) => {
   return `${m}:${String(sec).padStart(2, "0")}`;
 };
 
-const isCurrent = computed(() => (t: Track) =>
-  player.work?.work.id === props.work.work.id && player.currentTrack?.id === t.id
-);
+/** 当前播放音轨：本地按 作品id+音轨id 匹配；在线音轨（未入库作品 id 恒为 0、音轨 id 为索引）
+ *  按 file_path（流 URL，含作品标识）匹配，避免在别的在线作品页误显示「播放中」。 */
+const isCurrent = computed(() => (t: Track) => {
+  if (player.work?.work.id !== props.work.work.id) return false;
+  const cur = player.currentTrack;
+  if (!cur) return false;
+  if (api.isOnlineTrack(t.file_path) || api.isOnlineTrack(cur.file_path)) {
+    return t.file_path === cur.file_path;
+  }
+  return cur.id === t.id;
+});
 
 async function openWithPlayer(t: Track) {
   try {
