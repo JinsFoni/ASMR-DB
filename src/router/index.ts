@@ -15,6 +15,11 @@ const router = createRouter({
       component: () => import("../routes/DlsitePage.vue"),
     },
     {
+      path: "/latest",
+      name: "latest",
+      component: () => import("../routes/LatestPage.vue"),
+    },
+    {
       path: "/asmr",
       name: "asmr",
       component: () => import("../routes/AsmrOnlinePage.vue"),

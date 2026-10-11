@@ -116,7 +116,7 @@ onUnmounted(() => {
       <main class="app-main">
         <NavBar v-if="route.name !== 'player'" />
         <router-view v-slot="{ Component }">
-          <keep-alive :include="['AsmrOnlinePage', 'DlsitePage']">
+          <keep-alive :include="['AsmrOnlinePage', 'DlsitePage', 'LatestPage']">
             <component :is="Component" />
           </keep-alive>
         </router-view>

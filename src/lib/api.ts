@@ -579,6 +579,15 @@ export function getDlsiteDescription(rjCode: string): Promise<string> {
   );
 }
 
+/** 按 RJ 号取 DLsite 精确评分（rate_average_2dp）；无评分时为 null。 */
+export function getDlsiteRating(rjCode: string): Promise<number | null> {
+  return cached(`ext:dlsite-rating:${rjCode.toUpperCase()}`, () =>
+    get<{ rating: number | null }>(
+      `/api/dlsite/rating${qs({ rj: rjCode })}`
+    ).then((r) => r.rating)
+  );
+}
+
 // ---------- 服务端目录浏览 ----------
 
 export interface DirEntry {

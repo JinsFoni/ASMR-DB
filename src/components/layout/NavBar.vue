@@ -17,6 +17,7 @@ onMounted(() => {
 const links = [
   { to: "/", label: "作品库", match: (p: string) => p === "/" },
   { to: "/dlsite", label: "榜单", match: (p: string) => p.startsWith("/dlsite") },
+  { to: "/latest", label: "最新", match: (p: string) => p.startsWith("/latest") },
   { to: "/asmr", label: "在线", match: (p: string) => p.startsWith("/asmr") },
   { to: "/import", label: "导入", match: (p: string) => p === "/import" },
   { to: "/downloads", label: "下载", match: (p: string) => p === "/downloads" },

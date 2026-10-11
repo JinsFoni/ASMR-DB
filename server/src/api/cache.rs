@@ -154,6 +154,26 @@ pub mod asmrcache {
         static C: OnceLock<TtlCache<crate::db::models::ScrapedWork>> = OnceLock::new();
         C.get_or_init(|| cache(Duration::from_secs(300)))
     }
+
+    /// DLsite 精确评分（按 RJ 号），10 分钟（评分变化极慢）。
+    pub fn dlsite_rating() -> &'static TtlCache<Option<f64>> {
+        static C: OnceLock<TtlCache<Option<f64>>> = OnceLock::new();
+        C.get_or_init(|| cache(Duration::from_secs(600)))
+    }
+}
+
+/// DLsite 列表页缓存。
+pub mod dlsitecache {
+    use super::TtlCache;
+    use crate::api::asmr_online::AsmrWorksPage;
+    use std::sync::OnceLock;
+    use std::time::Duration;
+
+    /// DLsite「最新作品」列表页（按页码），5 分钟（最新列表变化快，但短缓存足够去抖）。
+    pub fn latest_page() -> &'static TtlCache<AsmrWorksPage> {
+        static C: OnceLock<TtlCache<AsmrWorksPage>> = OnceLock::new();
+        C.get_or_init(|| TtlCache::new(Duration::from_secs(300)))
+    }
 }
 
 #[cfg(test)]
