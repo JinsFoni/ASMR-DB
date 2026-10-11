@@ -15,6 +15,7 @@ import {
   ImageOff,
 } from "lucide-vue-next";
 import { usePlayerStore } from "../../stores/player";
+import { imgUrl } from "../../lib/api";
 
 const player = usePlayerStore();
 const router = useRouter();
@@ -60,7 +61,7 @@ function cycleLoop() {
       <div class="np-art overflow-hidden">
         <img
           v-if="player.work?.work.cover_url"
-          :src="player.work.work.cover_url"
+          :src="imgUrl(player.work.work.cover_url)"
           class="w-full h-full object-cover"
           alt=""
         />
@@ -81,8 +82,9 @@ function cycleLoop() {
       </div>
     </div>
 
-    <!-- 进度 -->
+    <!-- 进度（当前音轨有字幕时，在进度条上方显示当前字幕行） -->
     <div class="pcenter">
+      <p v-if="player.subtitleCues.length" class="psub">{{ player.subtitleText }}</p>
       <div class="pprog">
         <time>{{ fmt(player.currentTime) }}</time>
         <div class="pbar" @click="onSeekClick">
@@ -191,6 +193,17 @@ html[data-theme="sakura"] .player-dock {
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+/* 进度条上方的字幕行：单行截断，无字幕时不占位 */
+.psub {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--label-2);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
 }
 .pctrls {
   display: flex;
