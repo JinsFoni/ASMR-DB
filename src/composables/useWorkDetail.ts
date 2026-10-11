@@ -22,6 +22,7 @@ import {
 import { usePlayerStore } from "../stores/player";
 import { useWorksStore } from "../stores/works";
 import { useDownloadStore } from "../stores/download";
+import { showToast } from "../lib/toast";
 
 export interface UseWorkDetail {
   loading: Ref<boolean>;
@@ -533,7 +534,7 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     const id = localView.value?.work.id;
     if (!id) return;
     const res = await api.enqueueTranslation(id);
-    alert(res.message || "已加入翻译队列");
+    showToast(res.message || "已加入翻译队列", "success");
   }
 
   async function deleteWork() {

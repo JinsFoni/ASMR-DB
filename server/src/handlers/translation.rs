@@ -290,6 +290,7 @@ pub async fn list_translations(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnqueueBody {
     pub work_id: i64,
 }

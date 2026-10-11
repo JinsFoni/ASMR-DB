@@ -12,6 +12,7 @@ import {
   Repeat1,
   Loader2,
   Expand,
+  ImageOff,
 } from "lucide-vue-next";
 import { usePlayerStore } from "../../stores/player";
 
@@ -52,102 +53,333 @@ function cycleLoop() {
 <template>
   <footer
     v-if="player.visible && route.name !== 'player'"
-    class="h-16 shrink-0 border-t border-bg-border bg-bg-card flex items-center gap-4 px-4 relative"
+    class="player-dock glass"
   >
-    <!-- 进度条（悬浮在底部） -->
-    <div
-      class="absolute bottom-0 left-0 right-0 h-1 bg-bg-border cursor-pointer group"
-      @click="onSeekClick"
-    >
-      <div
-        class="h-full bg-accent transition-[width]"
-        :style="{ width: progressPercent + '%' }"
-      />
-    </div>
-
-    <!-- 当前曲目信息 -->
-    <div class="w-48 shrink-0 min-w-0">
-      <div class="text-xs text-white ellipsis-1">
-        {{ player.currentTrack?.title || "未播放" }}
+    <!-- 曲目 -->
+    <div class="np">
+      <div class="np-art overflow-hidden">
+        <img
+          v-if="player.work?.work.cover_url"
+          :src="player.work.work.cover_url"
+          class="w-full h-full object-cover"
+          alt=""
+        />
+        <ImageOff v-else :size="18" class="text-white/60" />
       </div>
-      <div class="text-[10px] text-muted ellipsis-1">
-        {{ player.work?.work.title_ja || player.work?.work.rj_code || "" }}
+      <div class="min-w-0">
+        <p class="np-title">{{ player.currentTrack?.title || "未播放" }}</p>
+        <p class="np-sub ellipsis-1">
+          {{ player.work?.work.title_zh || player.work?.work.title_ja || player.work?.work.rj_code || "" }}
+        </p>
       </div>
     </div>
 
-    <!-- 控制按钮 -->
-    <div class="flex items-center gap-1.5">
-      <button class="btn-ghost !p-1.5" title="上一首" @click="player.prev()">
-        <SkipBack :size="16" />
-      </button>
-      <button
-        class="w-9 h-9 rounded-full bg-accent hover:bg-accent-light text-white flex items-center justify-center transition-colors"
-        :title="player.playing ? '暂停' : '播放'"
-        @click="player.togglePlay()"
-      >
-        <Loader2 v-if="player.buffering" :size="16" class="animate-spin" />
-        <Pause v-else-if="player.playing" :size="16" />
-        <Play v-else :size="16" class="ml-0.5" />
-      </button>
-      <button class="btn-ghost !p-1.5" title="下一首" @click="player.next()">
-        <SkipForward :size="16" />
-      </button>
-    </div>
-
-    <!-- 时间 -->
-    <div class="text-[11px] text-muted tabular-nums w-28 shrink-0">
-      {{ fmt(player.currentTime) }} / {{ fmt(player.duration) }}
-    </div>
-
-    <div class="flex-1" />
-
-    <!-- 倍速 -->
-    <div class="relative">
-      <button class="btn-outline !px-2 text-xs" @click="showSpeeds = !showSpeeds">
-        {{ player.rate.toFixed(2) }}x
-      </button>
-      <div
-        v-if="showSpeeds"
-        class="absolute bottom-9 right-0 card p-1 z-50 shadow-xl"
-      >
-        <button
-          v-for="s in speeds"
-          :key="s"
-          class="w-full text-left px-3 py-1 text-xs rounded-md"
-          :class="player.rate === s ? 'text-accent-light bg-bg-hover' : 'text-muted hover:text-white hover:bg-bg-hover'"
-          @click="player.setRate(s); showSpeeds = false"
-        >
-          {{ s.toFixed(2) }}x
+    <!-- 控制 + 进度 -->
+    <div class="pcenter">
+      <div class="pctrls">
+        <button class="pctrl" title="上一首" @click="player.prev()">
+          <SkipBack :size="17" />
+        </button>
+        <button class="pmain" :title="player.playing ? '暂停' : '播放'" @click="player.togglePlay()">
+          <Loader2 v-if="player.buffering" :size="15" class="animate-spin" />
+          <Pause v-else-if="player.playing" :size="15" />
+          <Play v-else :size="15" class="ml-0.5" />
+        </button>
+        <button class="pctrl" title="下一首" @click="player.next()">
+          <SkipForward :size="17" />
         </button>
       </div>
+      <div class="pprog">
+        <time>{{ fmt(player.currentTime) }}</time>
+        <div class="pbar" @click="onSeekClick">
+          <i :style="{ width: progressPercent + '%' }" />
+        </div>
+        <time>{{ fmt(player.duration) }}</time>
+      </div>
     </div>
 
-    <!-- 循环模式 -->
-    <button class="btn-ghost !p-1.5" :title="'循环模式: ' + player.loopMode" @click="cycleLoop">
-      <Repeat1 v-if="player.loopMode === 'one'" :size="16" class="text-accent-light" />
-      <Repeat v-else :size="16" :class="player.loopMode === 'all' ? 'text-accent-light' : ''" />
-    </button>
+    <!-- 右侧：倍速 / 循环 / 音量 / 展开 -->
+    <div class="pright">
+      <div class="relative">
+        <button class="pspeed" @click="showSpeeds = !showSpeeds">
+          {{ player.rate.toFixed(2).replace(/\.?0+$/, "") }}×
+        </button>
+        <div v-if="showSpeeds" class="speed-pop glass">
+          <button
+            v-for="s in speeds"
+            :key="s"
+            class="speed-item"
+            :class="{ on: player.rate === s }"
+            @click="player.setRate(s); showSpeeds = false"
+          >
+            {{ s.toFixed(2).replace(/\.?0+$/, "") }}×
+          </button>
+        </div>
+      </div>
 
-    <!-- 音量 -->
-    <div class="flex items-center gap-1.5 w-28">
-      <button class="btn-ghost !p-1" @click="player.setVolume(player.volume > 0 ? 0 : 0.8)">
-        <VolumeX v-if="player.volume === 0" :size="15" />
-        <Volume2 v-else :size="15" />
+      <button
+        class="pctrl"
+        :title="'循环模式: ' + player.loopMode"
+        @click="cycleLoop"
+      >
+        <Repeat1 v-if="player.loopMode === 'one'" :size="16" class="text-accent-light" />
+        <Repeat v-else :size="16" :class="player.loopMode === 'all' ? 'text-accent-light' : ''" />
       </button>
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.01"
-        :value="player.volume"
-        class="flex-1 accent-accent"
-        @input="player.setVolume(parseFloat(($event.target as HTMLInputElement).value))"
-      />
-    </div>
 
-    <!-- 展开全屏播放器 -->
-    <button class="btn-ghost !p-1.5" title="全屏播放器（字幕）" @click="router.push({ name: 'player' })">
-      <Expand :size="16" />
-    </button>
+      <div class="pvol">
+        <button class="pctrl" @click="player.setVolume(player.volume > 0 ? 0 : 0.8)">
+          <VolumeX v-if="player.volume === 0" :size="15" />
+          <Volume2 v-else :size="15" />
+        </button>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          :value="player.volume"
+          class="vol-range"
+          @input="player.setVolume(parseFloat(($event.target as HTMLInputElement).value))"
+        />
+      </div>
+
+      <button class="pctrl" title="全屏播放器（字幕）" @click="router.push({ name: 'player' })">
+        <Expand :size="16" />
+      </button>
+    </div>
   </footer>
 </template>
+
+<style scoped>
+.player-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 70;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 40px));
+  backdrop-filter: blur(28px) saturate(1.7);
+  -webkit-backdrop-filter: blur(28px) saturate(1.7);
+  border-radius: 24px;
+  box-shadow:
+    0 24px 60px -16px rgba(0, 0, 0, 0.8),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+  padding: 12px 20px;
+  display: grid;
+  grid-template-columns: minmax(160px, 200px) 1fr minmax(150px, auto);
+  align-items: center;
+  gap: 18px;
+}
+html[data-theme="light"] .player-dock,
+html[data-theme="sakura"] .player-dock {
+  box-shadow:
+    0 24px 60px -16px rgba(0, 0, 0, 0.25),
+    inset 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+
+.np {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+.np-art {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--fill-2);
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+}
+.np-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-sub {
+  font-size: 11.5px;
+  color: var(--label-2);
+  margin-top: 1px;
+}
+
+.pcenter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.pctrls {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.pctrl {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--label);
+  display: grid;
+  place-items: center;
+  opacity: 0.75;
+  transition: opacity 0.15s, transform 0.15s;
+  padding: 0;
+}
+.pctrl:hover {
+  opacity: 1;
+  transform: scale(1.08);
+}
+.pmain {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  color: #0d0d0f;
+  border: none;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.15s, background 0.15s;
+}
+.pmain:hover {
+  transform: scale(1.07);
+  background: var(--blue);
+  color: #fff;
+}
+
+.pprog {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  max-width: 520px;
+}
+.pprog time {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+.pbar {
+  flex: 1;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+.pbar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-2);
+}
+.pbar i {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--label);
+}
+.pbar i::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.2);
+  transform: translateY(-50%);
+}
+
+.pright {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+.pspeed {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--label-2);
+  background: var(--fill-1);
+  border: none;
+  border-radius: 999px;
+  height: 30px;
+  padding: 0 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pspeed:hover {
+  background: var(--fill-3);
+  color: var(--label);
+}
+.speed-pop {
+  position: absolute;
+  bottom: 38px;
+  right: 0;
+  border-radius: var(--r-md);
+  padding: 5px;
+  z-index: 80;
+  box-shadow: var(--shadow-float), inset 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  display: flex;
+  flex-direction: column;
+  min-width: 76px;
+}
+.speed-item {
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--label-2);
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.speed-item:hover {
+  background: var(--fill-1);
+  color: var(--label);
+}
+.speed-item.on {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.pvol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--label-2);
+}
+.vol-range {
+  width: 70px;
+  accent-color: var(--label);
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .player-dock {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 12px 16px;
+    bottom: 12px;
+  }
+  .pright {
+    display: none;
+  }
+  .np {
+    padding-bottom: 2px;
+  }
+}
+</style>

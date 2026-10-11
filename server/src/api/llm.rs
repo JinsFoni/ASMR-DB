@@ -81,7 +81,9 @@ pub fn translate(cfg: &LlmConfig, text: &str) -> Result<String, String> {
     }
     let builder = reqwest::blocking::Client::builder()
         .user_agent(crate::api::asmrone::USER_AGENT)
-        .timeout(std::time::Duration::from_secs(60));
+        // 推理型模型思考时长波动大（数秒到数分钟），60s 会把仍在思考的请求掐断
+        .timeout(std::time::Duration::from_secs(300))
+        .connect_timeout(std::time::Duration::from_secs(15));
     let client = cfg
         .proxy
         .apply_blocking(builder, ProxyTarget::Llm)
@@ -102,7 +104,16 @@ pub fn translate(cfg: &LlmConfig, text: &str) -> Result<String, String> {
         .header("Authorization", format!("Bearer {}", cfg.api_key))
         .json(&body)
         .send()
-        .map_err(|e| format!("连接 LLM 服务失败: {e}"))?;
+        .map_err(|e| {
+            // reqwest 顶层消息不含真实原因（如 connect refused / reset by peer），展开 source 链便于排障
+            let mut chain = format!("{e}");
+            let mut src = std::error::Error::source(&e);
+            while let Some(s) = src {
+                chain.push_str(&format!(" <- {s}"));
+                src = s.source();
+            }
+            format!("连接 LLM 服务失败: {chain}")
+        })?;
 
     let status = resp.status();
     let raw = resp.text().map_err(|e| format!("读取响应失败: {e}"))?;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { Loader2, ChevronLeft, ChevronRight, Star, Heart, ListVideo, History, UserRound } from "lucide-vue-next";
+import { Loader2, ChevronLeft, ChevronRight, Heart, ListVideo, History } from "lucide-vue-next";
 import * as api from "../lib/api";
 import type { AsmrOnlineWork, AsmrPlaylist, AsmrWorksPage } from "../lib/types";
 import AsmrWorkCard from "../components/asmr/AsmrWorkCard.vue";
@@ -195,47 +195,40 @@ onActivated(() => {
 </script>
 
 <template>
-  <div class="p-5 space-y-4">
-    <!-- 工具栏：左侧内容切换 + 右侧账号切换 -->
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-2">
-        <div class="flex rounded-lg border border-bg-border overflow-hidden bg-bg-card">
-          <button
-            v-for="t in SOURCE_TABS"
-            :key="t.value"
-            class="px-3 py-1.5 text-xs transition-colors"
-            :class="!accountTab && sourceTab === t.value ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
-            @click="switchSource(t.value)"
-          >
-            {{ t.label }}
-          </button>
-        </div>
-        <!-- 全部 tab 的排序切换 -->
-        <div v-if="!accountTab && sourceTab === 'all'" class="flex rounded-lg border border-bg-border overflow-hidden bg-bg-card">
+  <div class="page-wrap space-y-5">
+    <!-- 工具栏：左侧内容切换 + 右侧账号切换（设计稿 dual-tools，无大标题） -->
+    <div class="dual-tools">
+      <div class="seg">
+        <button
+          v-for="t in SOURCE_TABS"
+          :key="t.value"
+          :class="{ on: !accountTab && sourceTab === t.value }"
+          @click="switchSource(t.value)"
+        >
+          {{ t.label }}
+        </button>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <span v-if="!accountTab && sourceTab === 'all'" class="seg" style="order: 2">
           <button
             v-for="o in ORDERS"
             :key="o.value"
-            class="px-2.5 py-1.5 text-xs transition-colors"
-            :class="order === o.value ? 'bg-bg-hover text-white' : 'text-muted hover:text-white'"
+            :class="{ on: order === o.value }"
             @click="switchOrder(o.value)"
           >
             {{ o.label }}
           </button>
-        </div>
-      </div>
-      <div class="flex items-center gap-2">
-        <span class="text-[10px] text-muted flex items-center gap-1">
-          <UserRound :size="12" /> 账号
         </span>
-        <div class="flex rounded-lg border border-bg-border overflow-hidden bg-bg-card">
+        <span class="acct-label">👤 账号</span>
+        <div class="seg">
           <button
             v-for="t in ACCOUNT_TABS"
             :key="t.value"
-            class="px-3 py-1.5 text-xs transition-colors flex items-center gap-1"
-            :class="accountTab === t.value ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
+            class="flex items-center gap-1.5"
+            :class="{ on: accountTab === t.value }"
             @click="switchAccount(t.value)"
           >
-            <component :is="t.icon" :size="12" /> {{ t.label }}
+            <component :is="t.icon" :size="13" /> {{ t.label }}
           </button>
         </div>
       </div>
@@ -248,34 +241,39 @@ onActivated(() => {
     </div>
     <div
       v-else-if="accountTab === 'playlist' && !selectedPlaylist"
-      class="space-y-2"
+      class="pl-section"
     >
-      <!-- 播放列表选择 -->
+      <!-- 播放列表选择（设计稿：h2 标题 + pl-card 侧卡） -->
+      <h2>
+        <ListVideo :size="15" /> 播放列表
+        <span v-if="playlists?.length" class="n">{{ playlists.length }}</span>
+      </h2>
       <div v-if="!playlists?.length" class="text-center py-16 text-muted text-sm">
         暂无播放列表
       </div>
       <button
         v-for="p in playlists"
         :key="p.id"
-        class="w-full card p-3 flex items-center gap-3 text-left hover:border-accent/50 transition-colors"
+        class="w-full card p-3.5 flex items-center gap-3.5 text-left hover:-translate-y-0.5 transition-transform"
         @click="openPlaylist(p)"
       >
         <img
           v-if="p.main_cover_url"
           :src="p.main_cover_url"
-          class="w-14 h-14 rounded-lg object-cover bg-bg-hover shrink-0"
+          class="w-14 h-14 rounded-xl object-cover shrink-0"
+          style="background: var(--fill-1)"
         />
-        <div v-else class="w-14 h-14 rounded-lg bg-bg-hover flex items-center justify-center text-muted/50 shrink-0">
+        <div v-else class="w-14 h-14 rounded-xl flex items-center justify-center text-muted/50 shrink-0" style="background: var(--fill-1)">
           <ListVideo :size="20" />
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-sm text-white font-medium ellipsis-1">{{ p.name }}</div>
-          <div class="text-[11px] text-muted mt-0.5">
+          <div class="text-sm font-semibold ellipsis-1">{{ p.name }}</div>
+          <div class="text-[11px] mt-0.5" style="color: var(--label-2)">
             {{ p.works_count ?? 0 }} 部作品<template v-if="p.user_name"> · {{ p.user_name }}</template>
           </div>
-          <div v-if="p.description" class="text-[11px] text-muted/70 mt-0.5 ellipsis-1">{{ p.description }}</div>
+          <div v-if="p.description" class="text-[11px] mt-0.5 ellipsis-1" style="color: var(--label-3)">{{ p.description }}</div>
         </div>
-        <ChevronRight :size="16" class="text-muted shrink-0" />
+        <ChevronRight :size="16" class="shrink-0" style="color: var(--label-3)" />
       </button>
     </div>
     <div v-else-if="!items.length" class="text-center py-16 text-muted text-sm">
@@ -284,14 +282,14 @@ onActivated(() => {
 
     <!-- 播放列表详情的返回条 -->
     <div v-if="accountTab === 'playlist' && selectedPlaylist" class="flex items-center gap-2 text-xs">
-      <button class="btn-ghost !px-2 !py-1" @click="backToPlaylists">
+      <button class="btn ghost sm" @click="backToPlaylists">
         <ChevronLeft :size="13" /> 返回列表
       </button>
-      <span class="text-white/80">{{ pageTitle }}</span>
+      <span style="color: var(--label)">{{ pageTitle }}</span>
     </div>
 
-    <!-- 卡片网格 -->
-    <div v-if="!loading && items.length" class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(300px, 1fr))">
+    <!-- 卡片网格（设计稿 .grid） -->
+    <div v-if="!loading && items.length" class="grid-works">
       <AsmrWorkCard
         v-for="item in items"
         :key="`${item.id}-${item.rj_code}`"
@@ -302,21 +300,102 @@ onActivated(() => {
       />
     </div>
 
-    <!-- 分页 -->
-    <div v-if="!loading && !error && (items.length || page > 1)" class="flex items-center justify-center gap-3 pt-2">
-      <button class="btn-outline !text-xs !py-1.5" :disabled="page <= 1" @click="prevPage">
-        <ChevronLeft :size="13" /> 上一页
-      </button>
-      <span class="text-xs text-muted">第 {{ page }} 页</span>
-      <button class="btn-outline !text-xs !py-1.5" :disabled="!hasNext" @click="nextPage">
-        下一页 <ChevronRight :size="13" />
-      </button>
+    <!-- 分页（设计稿 .pager） -->
+    <div v-if="!loading && !error && (items.length || page > 1)" class="pager">
+      <button :disabled="page <= 1" @click="prevPage">‹ 上一页</button>
+      <button class="on">{{ page }}</button>
+      <button :disabled="!hasNext" @click="nextPage">下一页 ›</button>
     </div>
 
-    <!-- 账号数据提示 -->
-    <div v-if="!loading && accountTab && items.length" class="text-center text-[10px] text-muted/60 flex items-center justify-center gap-1">
-      <Star :size="10" />
-      {{ accountTab === "history" ? "本地播放历史（最近播放优先）" : "来自 asmr.one 账号数据" }}
+    <!-- 底部数据来源提示（设计稿 .foot-hint） -->
+    <div v-if="!loading && !error && items.length" class="foot-hint">
+      来自 asmr.one {{ accountTab ? "账号数据" : "在线数据" }} · api.asmr-200.com
     </div>
   </div>
 </template>
+
+<style scoped>
+.page-wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 30px 28px 150px;
+}
+@media (max-width: 900px) {
+  .page-wrap {
+    padding: 18px 18px 150px;
+  }
+}
+.dual-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.acct-label {
+  font-size: 12px;
+  color: var(--label-3);
+}
+.grid-works {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 22px;
+}
+.pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin-top: 30px;
+}
+.pager button {
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--fill-1);
+  color: var(--label-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.pager button:hover:not(:disabled) {
+  background: var(--fill-2);
+  color: var(--label);
+}
+.pager button.on {
+  background: var(--blue);
+  color: #fff;
+}
+.pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* 播放列表分区（设计稿 .pl-section） */
+.pl-section h2 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--label);
+}
+.pl-section h2 .n {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--label-3);
+  background: var(--fill-1);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+/* 底部来源提示（设计稿 .foot-hint） */
+.foot-hint {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--label-3);
+  margin-top: 22px;
+}
+</style>

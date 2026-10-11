@@ -26,27 +26,54 @@ function go(p: number) {
 </script>
 
 <template>
-  <div class="flex items-center justify-center gap-1 py-4">
-    <button class="btn-ghost !p-1.5" :disabled="page <= 1" @click="go(page - 1)">
-      <ChevronLeft :size="15" />
+  <div class="flex items-center justify-center gap-3 pt-8">
+    <button class="pager-btn" :disabled="page <= 1" @click="go(page - 1)">
+      <ChevronLeft :size="14" /> 上一页
     </button>
     <template v-for="(p, i) in pages" :key="i">
-      <button
-        v-if="p === '...'"
-        class="px-2 text-muted text-xs"
-        disabled
-      >...</button>
-      <button
-        v-else
-        class="min-w-7 h-7 px-2 rounded-lg text-xs transition-colors"
-        :class="p === page ? 'bg-accent text-white' : 'text-muted hover:text-white hover:bg-bg-hover'"
-        @click="go(p)"
-      >
+      <button v-if="p === '...'" class="px-1 text-xs" style="color: var(--label-3)" disabled>…</button>
+      <button v-else class="pager-btn num" :class="{ on: p === page }" @click="go(p)">
         {{ p }}
       </button>
     </template>
-    <button class="btn-ghost !p-1.5" :disabled="page >= total" @click="go(page + 1)">
-      <ChevronRight :size="15" />
+    <button class="pager-btn" :disabled="page >= total" @click="go(page + 1)">
+      下一页 <ChevronRight :size="14" />
     </button>
   </div>
 </template>
+
+<style scoped>
+.pager-btn {
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--fill-1);
+  color: var(--label-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s, color 0.2s;
+}
+.pager-btn:hover:not(:disabled) {
+  background: var(--fill-2);
+  color: var(--label);
+}
+.pager-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pager-btn.num {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+.pager-btn.on {
+  background: var(--blue);
+  color: #fff;
+}
+</style>

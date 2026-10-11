@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BookmarkCheck, CheckCircle2, ImageOff, Loader2 } from "lucide-vue-next";
+import { BookmarkCheck, ImageOff, Loader2 } from "lucide-vue-next";
 import type { AsmrOnlineWork } from "../../lib/types";
 
 const props = defineProps<{
@@ -20,90 +20,179 @@ const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? 
 const title = computed(() => props.item.title || props.item.rj_code || `#${props.item.id}`);
 
 const metaText = computed(() => {
-  const parts: string[] = [];
-  if (props.item.dl_count) parts.push(`販売 ${props.item.dl_count.toLocaleString()}`);
-  if (props.item.rating != null && props.item.rating > 0) parts.push(`★ ${props.item.rating.toFixed(1)}`);
-  if (props.item.duration_sec) parts.push(`${Math.round(props.item.duration_sec / 60)}分`);
-  if (parts.length) return parts.join(" · ");
-  if (props.item.release) return `${props.item.release.slice(0, 10)} 发售`;
+  if (props.item.rj_code) {
+    const parts = [props.item.rj_code];
+    if (props.item.circle_name) parts.push(props.item.circle_name);
+    return parts.join(" · ");
+  }
   return "";
+});
+const meta2Text = computed(() => {
+  const parts: string[] = [];
+  if (props.item.release) parts.push(props.item.release.slice(0, 10));
+  if (props.item.duration_sec) parts.push(`${Math.round(props.item.duration_sec / 60)} 分钟`);
+  if (!parts.length && props.item.dl_count) parts.push(`販売 ${props.item.dl_count.toLocaleString()}`);
+  return parts.join(" · ");
 });
 </script>
 
 <template>
-  <a
-    :href="localId ? `#/work/${localId}` : `#/asmr/work/${item.id}`"
-    class="group block rounded-xl overflow-hidden border border-bg-border bg-bg-card hover:border-accent/50 hover:shadow-lg hover:shadow-accent/5 transition-all"
-    @click.prevent="emit('open', item)"
+  <article
+    class="oc"
+    @click="emit('open', item)"
   >
-    <!-- 封面（完整不裁切） -->
-    <div class="relative bg-bg-hover overflow-hidden">
+    <!-- 封面（4:3 裁切，hover 缩放） -->
+    <div class="oc-cover">
       <img
         v-if="item.cover_url"
         :src="item.cover_url"
         :alt="title"
         loading="lazy"
-        class="w-full h-auto group-hover:scale-105 transition-transform duration-300"
       />
-      <div v-else class="w-full aspect-[4/3] flex items-center justify-center text-muted/50">
+      <div v-else class="w-full h-full flex items-center justify-center" style="color: var(--label-3)">
         <ImageOff :size="28" />
       </div>
 
-      <!-- 已入库标识（本地已存在该作品） -->
-      <div
-        v-if="localId"
-        class="absolute top-1.5 right-1.5 flex gap-1"
-      >
-        <span
-          class="px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 backdrop-blur bg-yellow-500/90 text-white"
-        >
-          <BookmarkCheck :size="10" /> 已入库
-        </span>
-      </div>
-      <!-- 本地作品（播放历史）显示已下载标识 -->
-      <span
-        v-else-if="localWorkId"
-        class="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 backdrop-blur bg-green-500/90 text-white"
-      >
-        <CheckCircle2 :size="10" /> 本地
-      </span>
+      <!-- 已入库角标（设计稿 .corner） -->
+      <span v-if="localId" class="corner"><BookmarkCheck :size="10" /> 已入库</span>
     </div>
 
-    <!-- 信息 -->
-    <div class="p-2.5 relative">
-      <div class="text-xs font-medium text-white ellipsis-2 min-h-[2.2rem]" :title="title">
-        {{ title }}
-      </div>
-      <div class="text-[10px] text-muted mt-1 ellipsis-1">
-        <span v-if="item.rj_code" class="font-mono">{{ item.rj_code }}</span>
-        <span v-if="item.circle_name"> · {{ item.circle_name }}</span>
-      </div>
-      <div v-if="item.tags.length" class="flex flex-wrap gap-1 mt-1.5 min-h-[18px]" :class="localId || !item.rj_code ? '' : 'pr-14'">
-        <span
-          v-for="t in item.tags.slice(0, 3)"
-          :key="t"
-          class="px-1 py-0.5 rounded text-[9px] bg-bg-hover text-muted border border-bg-border"
-        >
-          {{ t }}
-        </span>
-      </div>
-      <div class="flex items-center gap-2 mt-1.5 text-[10px] text-muted min-h-[14px]" :class="localId || !item.rj_code ? '' : 'pr-14'">
-        <span v-if="metaText">{{ metaText }}</span>
-      </div>
-
-      <!-- 入库按钮（未入库且有 RJ 号时显示在信息区右下角） -->
-      <!-- 卡片根元素是 <a>，必须 .prevent 阻止默认导航，否则点击入库会误跳详情 -->
-      <button
-        v-if="!localId && item.rj_code"
-        class="btn-primary absolute bottom-2.5 right-2.5 !text-[10px] !px-2 !py-1"
-        :disabled="adding"
-        title="将此作品加入作品库"
-        @click.stop.prevent="emit('add', item)"
-      >
-        <Loader2 v-if="adding" :size="11" class="animate-spin" />
-        <BookmarkCheck v-else :size="11" />
-        入库
-      </button>
+    <h3 :title="title">{{ title }}</h3>
+    <p class="oc-meta">{{ metaText }}</p>
+    <p v-if="meta2Text" class="oc-meta2">{{ meta2Text }}</p>
+    <div v-if="item.tags.length" class="oc-tags">
+      <span v-for="t in item.tags.slice(0, 3)" :key="t" class="wtag">{{ t }}</span>
     </div>
-  </a>
+
+    <!-- 入库按钮（未入库且有 RJ 号，悬浮于信息区右下） -->
+    <button
+      v-if="!localId && item.rj_code"
+      class="add-btn"
+      :disabled="adding"
+      title="将此作品加入作品库"
+      @click.stop="emit('add', item)"
+    >
+      <Loader2 v-if="adding" :size="11" class="animate-spin" />
+      <template v-else>＋ 入库</template>
+    </button>
+  </article>
 </template>
+
+<style scoped>
+.oc {
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.25s cubic-bezier(0.3, 0.6, 0.2, 1);
+  min-width: 0;
+}
+.oc:hover {
+  transform: translateY(-4px);
+}
+.oc-cover {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-card), inset 0 0 0 0.5px rgba(255, 255, 255, 0.07);
+}
+.oc-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.4s cubic-bezier(0.3, 0.6, 0.2, 1);
+}
+.oc:hover .oc-cover img {
+  transform: scale(1.05);
+}
+.corner {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(48, 209, 88, 0.92);
+  backdrop-filter: blur(6px);
+  border-radius: 999px;
+  padding: 3px 9px;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+}
+.oc h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.42;
+  margin-top: 11px;
+  letter-spacing: -0.01em;
+  color: var(--label);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.oc:hover h3 {
+  color: var(--blue-deep);
+}
+.oc-meta {
+  font-size: 11.5px;
+  color: var(--label-2);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-meta2 {
+  font-size: 11.5px;
+  color: var(--label-3);
+  margin-top: 1px;
+}
+.oc-tags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.wtag {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--label-2);
+  background: var(--fill-1);
+  border-radius: 6px;
+  padding: 2px 8px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.add-btn {
+  position: absolute;
+  right: 0;
+  bottom: -4px;
+  height: 27px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s;
+  z-index: 2;
+}
+.add-btn:hover {
+  background: var(--blue-deep);
+}
+.add-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+</style>

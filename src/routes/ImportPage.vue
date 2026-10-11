@@ -2,10 +2,10 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import {
-  Plus,
   FolderOpen,
   Loader2,
   Search,
+  Check,
   CheckCircle2,
   XCircle,
   Download,
@@ -34,9 +34,9 @@ const rjSmartGroup = ref(true);
 const rjGroupName = ref("");
 
 const sources = [
-  { value: "auto", label: "智能自动", desc: "优先 DLsite，受限自动回退 asmr.one" },
-  { value: "dlsite", label: "DLsite", desc: "官方直连" },
-  { value: "asmrone", label: "asmr.one", desc: "asmr.one 数据源" },
+  { value: "auto", label: "智能自动", desc: "优先 asmr.one,失败回退 DLsite" },
+  { value: "dlsite", label: "DLsite", desc: "从 DLsite 抓取" },
+  { value: "asmrone", label: "asmr.one", desc: "从 ASMR ONE 抓取" },
 ];
 
 // 目录选择器（服务端目录浏览）：rj = RJ 导入时关联本地文件夹，scan = 扫描根目录
@@ -99,7 +99,7 @@ async function doImport() {
       const bindRes = await api.bindLocalFolder(preview.value.rj_code, rjLocalFolder.value.trim(), gname);
       worksStore.fetchWorks();
       worksStore.loadGroups();
-      importFeedback.value = `已关联本地文件夹，扫描到 ${bindRes.trackCount} 首音轨${bindRes.groupName ? `，已分配分组「${bindRes.groupName}」` : ""}`;
+      importFeedback.value = `已关联本地文件夹,扫描到 ${bindRes.trackCount} 首音轨${bindRes.groupName ? `,已分配分组「${bindRes.groupName}」` : ""}`;
     }
   } catch (e) {
     previewError.value = String(e);
@@ -185,192 +185,166 @@ async function importAll() {
 </script>
 
 <template>
-  <div class="p-5 space-y-6 max-w-4xl">
-    <!-- ===== RJ 号导入 ===== -->
-    <section class="card p-5">
-      <h2 class="text-sm font-semibold text-white flex items-center gap-2 mb-1">
-        <Plus :size="16" class="text-accent" /> 通过 RJ 号导入
-      </h2>
-      <p class="text-xs text-muted mb-4">
-        输入作品的 RJ 号，自动抓取封面、标题、社团、声优、标签等信息。
-      </p>
+  <div class="page-wrap">
+    <div class="page-head">
+      <div>
+        <h1>导入作品</h1>
+        <p class="sub">通过 RJ 号从 DLsite / asmr.one 拉取元数据,或扫描本地文件夹批量入库</p>
+      </div>
+    </div>
 
-      <!-- 数据源切换 -->
-      <div class="flex items-center gap-2 mb-3">
-        <span class="text-[11px] text-muted shrink-0">数据源：</span>
-        <div class="flex rounded-lg border border-bg-border overflow-hidden">
+    <div class="cols">
+      <!-- 左:RJ 号导入 -->
+      <section class="card panel">
+        <h2>📥 通过 RJ 号导入</h2>
+        <p class="desc">输入作品的 RJ 号,先预览元数据再确认入库</p>
+
+        <div class="src-seg">
           <button
             v-for="s in sources"
             :key="s.value"
-            class="px-3 py-1.5 text-xs transition-colors"
-            :class="source === s.value ? 'bg-accent/20 text-accent-light' : 'text-muted hover:text-white'"
+            class="src-opt"
+            :class="{ on: source === s.value }"
             @click="source = s.value as 'auto' | 'dlsite' | 'asmrone'"
           >
-            {{ s.label }}
+            <b>{{ s.label }}</b>
+            <span>{{ s.desc }}</span>
           </button>
         </div>
-        <span class="text-[10px] text-muted/60">
-          {{ sources.find((s) => s.value === source)?.desc }}
-        </span>
-      </div>
 
-      <div class="flex gap-2">
-        <input
-          v-model="rjInput"
-          class="input flex-1 font-mono uppercase"
-          placeholder="例如: RJ01014447"
-          @keyup.enter="doPreview"
-        />
-        <button class="btn-primary" :disabled="previewing" @click="doPreview">
-          <Search v-if="!previewing" :size="15" />
-          <Loader2 v-else :size="15" class="animate-spin" />
-          预览
-        </button>
-      </div>
-
-      <p v-if="previewError" class="text-xs text-accent mt-2">{{ previewError }}</p>
-
-      <!-- 预览卡片 -->
-      <div v-if="preview" class="mt-4 flex gap-4 card !bg-bg-deep p-4 animate-fade-in">
-        <div class="w-28 aspect-[3/4] rounded-lg overflow-hidden bg-bg-hover shrink-0">
-          <img v-if="preview.cover_url" :src="preview.cover_url" class="w-full h-full object-cover" />
+        <div class="rj-input-row">
+          <label class="field">
+            <Search :size="14" />
+            <input
+              v-model="rjInput"
+              class="mono"
+              placeholder="例如: RJ01014447"
+              @keyup.enter="doPreview"
+            />
+          </label>
+          <button class="btn primary" style="height: 44px" :disabled="previewing" @click="doPreview">
+            <Loader2 v-if="previewing" :size="15" class="animate-spin" />
+            <Search v-else :size="15" />
+            预览
+          </button>
         </div>
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-semibold text-white">{{ preview.title_zh || preview.title_ja }}</div>
-          <div class="text-[11px] text-muted mt-0.5 font-mono">{{ preview.rj_code }}</div>
-          <div class="flex flex-wrap gap-1.5 mt-2 text-[11px] text-muted">
-            <span v-if="preview.circle_name">🏢 {{ preview.circle_name }}</span>
-            <span v-if="preview.sale_date">📅 {{ preview.sale_date }}</span>
-            <span v-if="preview.price">💰 ¥{{ preview.price.toLocaleString() }}</span>
-            <span v-if="preview.duration_min">⏱ {{ preview.duration_min }}分</span>
-            <span v-if="preview.file_size_mb">📦 {{ preview.file_size_mb.toFixed(1) }}MB</span>
+
+        <p v-if="previewError" class="text-xs mt-2.5" style="color: var(--red)">{{ previewError }}</p>
+
+        <!-- 预览卡片 -->
+        <div v-if="preview" class="card preview animate-fade-in">
+          <div class="pv-cov">
+            <img v-if="preview.cover_url" :src="preview.cover_url" />
           </div>
-          <div v-if="preview.actors.length" class="mt-1.5 text-[11px] text-muted">
-            🎤 {{ preview.actors.join(" / ") }}
+          <div class="min-w-0">
+            <h3>{{ preview.title_zh || preview.title_ja }}</h3>
+            <p class="pv-rj">{{ preview.rj_code }}</p>
+            <div class="pv-meta">
+              <span v-if="preview.circle_name">🏢 {{ preview.circle_name }}</span>
+              <span v-if="preview.sale_date">📅 {{ preview.sale_date }}</span>
+              <span v-if="preview.price">💰 {{ preview.price.toLocaleString() }} 円</span>
+              <span v-if="preview.actors.length">🎤 {{ preview.actors.join(" / ") }}</span>
+              <span v-if="preview.file_size_mb">📦 {{ preview.file_size_mb.toFixed(1) }} MB</span>
+            </div>
+            <div v-if="preview.tags.length" class="pv-tags">
+              <span v-for="t in preview.tags" :key="t" class="btag">{{ t }}</span>
+            </div>
           </div>
-          <div v-if="preview.tags.length" class="mt-1.5 flex flex-wrap gap-1">
-            <span
-              v-for="t in preview.tags"
-              :key="t"
-              class="px-1.5 py-0.5 rounded text-[10px] bg-bg-hover text-muted"
-            >
-              #{{ t }}
+        </div>
+
+        <div v-if="preview" class="assoc">
+          <h4>关联本地文件夹(可选)</h4>
+          <div class="assoc-row">
+            <label class="field">
+              <FolderOpen :size="14" />
+              <input v-model="rjLocalFolder" placeholder="选择本地作品文件夹" />
+            </label>
+            <button class="btn" style="height: 40px" @click="pickRjLocalFolder">浏览</button>
+          </div>
+          <label class="checkline">
+            <button type="button" class="cbx" :class="{ off: !rjSmartGroup }" @click="rjSmartGroup = !rjSmartGroup">
+              <Check v-if="rjSmartGroup" :size="10" stroke-width="3" />
+            </button>
+            智能匹配分组(将上级目录设为分组)
+          </label>
+          <div v-if="rjSmartGroup && rjLocalFolder" class="flex items-center gap-2 mt-2">
+            <span class="text-[11px]" style="color: var(--label-3)">分组名:</span>
+            <input v-model="rjGroupName" class="input !h-8 !py-0 !px-2.5 w-28 !text-xs" />
+          </div>
+          <p v-if="importFeedback" class="ok-note">✅ {{ importFeedback }}</p>
+        </div>
+
+        <div v-if="preview" class="import-actions">
+          <button class="btn primary" :disabled="importing" @click="doImport">
+            <Loader2 v-if="importing" :size="14" class="animate-spin" />
+            {{ importDone ? "已导入 ✓" : "确认导入" }}
+          </button>
+          <button
+            v-if="importDone"
+            class="btn"
+            @click="router.push({ name: 'work-detail', params: { id: importDone } })"
+          >
+            查看详情
+          </button>
+        </div>
+      </section>
+
+      <!-- 右:扫描本地文件夹 -->
+      <section class="card panel">
+        <h2>📂 扫描本地文件夹</h2>
+        <p class="desc">选择包含 RJ 命名目录的文件夹,自动发现可导入的作品</p>
+
+        <button class="btn primary" style="margin-top: 16px; height: 42px" :disabled="scanning" @click="pickerMode = 'scan'; showFolderPicker = true">
+          <Loader2 v-if="scanning" :size="15" class="animate-spin" />
+          {{ scanning ? "扫描中..." : "选择文件夹并扫描" }}
+        </button>
+
+        <div v-if="scanDone && !scanItems.length" class="desc mt-4">
+          未在所选文件夹中发现 RJ 号目录。
+        </div>
+
+        <template v-if="scanItems.length">
+          <div class="scan-head">
+            <span class="info">
+              共 <b>{{ scanItems.length }}</b> 个 RJ 目录,未导入 <b>{{ scanItems.filter((i) => !i.found).length }}</b> 个
             </span>
+            <label class="checkline" style="margin-top: 0">
+              <button type="button" class="cbx" :class="{ off: !smartGroup }" @click="smartGroup = !smartGroup">
+                <Check v-if="smartGroup" :size="10" stroke-width="3" />
+              </button>
+              🔗 智能匹配分组
+            </label>
           </div>
 
-          <!-- 关联本地文件夹选项 -->
-          <div class="mt-3 pt-3 border-t border-bg-border/60 space-y-2">
-            <div class="flex items-center gap-2">
-              <span class="text-[11px] text-muted shrink-0">关联本地文件夹：</span>
-              <input
-                v-model="rjLocalFolder"
-                class="input flex-1 !text-xs !py-1"
-                placeholder="可选：选择该作品在硬盘中的存放目录"
-              />
-              <button class="btn-outline !text-xs !py-1 flex items-center gap-1" @click="pickRjLocalFolder">
-                <FolderOpen :size="12" /> 浏览
+          <div class="scan-list">
+            <div v-for="item in scanItems" :key="item.path" class="scan-item" :class="{ done: item.found }">
+              <span class="st">
+                <CheckCircle2 v-if="item.found" :size="15" style="color: var(--green)" />
+                <XCircle v-else :size="15" style="color: var(--label-3)" />
+              </span>
+              <span class="rj">{{ item.rjCode }}</span>
+              <span v-if="item.groupName" class="grp">{{ item.groupName }}</span>
+              <span class="path" :title="item.path">{{ item.path }}</span>
+              <span v-if="item.found" class="title-ok">已入库<template v-if="item.title"> · {{ item.title }}</template></span>
+              <button
+                v-else
+                class="btn primary sm shrink-0"
+                @click="importFound(item)"
+              >
+                <Download :size="11" /> 抓取导入
               </button>
             </div>
-            <div v-if="rjLocalFolder" class="flex items-center gap-4 text-[11px] text-muted">
-              <label class="flex items-center gap-1.5 cursor-pointer select-none">
-                <input type="checkbox" v-model="rjSmartGroup" class="rounded text-accent" />
-                <span>智能匹配分组 (将上级目录设为分组)</span>
-              </label>
-              <div v-if="rjSmartGroup" class="flex items-center gap-1">
-                <span>分组名:</span>
-                <input v-model="rjGroupName" class="input !text-xs !py-0.5 !px-2 w-28" />
-              </div>
-            </div>
           </div>
 
-          <p v-if="importFeedback" class="text-xs text-green-400 mt-2 font-medium">✅ {{ importFeedback }}</p>
-
-          <div class="mt-3 flex gap-2">
-            <button class="btn-primary !text-xs" :disabled="importing" @click="doImport">
-              <Loader2 v-if="importing" :size="13" class="animate-spin" />
-              <Plus v-else :size="13" />
-              {{ importDone ? "已导入 ✓" : "确认导入" }}
-            </button>
-            <button
-              v-if="importDone"
-              class="btn-outline !text-xs"
-              @click="router.push({ name: 'work-detail', params: { id: importDone } })"
-            >
-              查看详情
+          <div style="margin-top: 18px">
+            <button class="btn primary" style="height: 42px" :disabled="importingAll" @click="importAll">
+              <Loader2 v-if="importingAll" :size="14" class="animate-spin" />
+              一键导入全部({{ scanItems.filter((i) => !i.found).length }})
             </button>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ===== 本地文件夹扫描 ===== -->
-    <section class="card p-5">
-      <h2 class="text-sm font-semibold text-white flex items-center gap-2 mb-1">
-        <FolderOpen :size="16" class="text-accent" /> 扫描本地文件夹
-      </h2>
-      <p class="text-xs text-muted mb-4">
-        扫描硬盘上已下载的 DLsite 作品文件夹（自动识别 RJ 号），识别出已导入的作品。
-      </p>
-
-      <button class="btn-outline" :disabled="scanning" @click="pickerMode = 'scan'; showFolderPicker = true">
-        <Loader2 v-if="scanning" :size="15" class="animate-spin" />
-        <FolderOpen v-else :size="15" />
-        {{ scanning ? "扫描中..." : "选择文件夹并扫描" }}
-      </button>
-
-      <div v-if="scanDone && !scanItems.length" class="mt-4 text-xs text-muted">
-        未在所选文件夹中发现 RJ 号目录。
-      </div>
-
-      <div v-if="scanItems.length" class="mt-4 space-y-1.5 max-h-80 overflow-y-auto">
-        <div class="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5">
-          <span class="text-[11px] text-muted">
-            共 {{ scanItems.length }} 个 RJ 目录，未导入 {{ scanItems.filter((i) => !i.found).length }} 个
-          </span>
-          <div class="flex items-center gap-3">
-            <label class="flex items-center gap-1.5 text-[11px] text-muted cursor-pointer select-none">
-              <input v-model="smartGroup" type="checkbox" class="accent-accent" />
-              🔗 智能匹配分组（将上级分类文件夹设为分组）
-            </label>
-            <button class="btn-primary !text-[11px] !px-3 !py-1" :disabled="importingAll" @click="importAll">
-              <Loader2 v-if="importingAll" :size="12" class="animate-spin" />
-              <Download v-else :size="12" />
-              {{ importingAll ? "导入中..." : "一键导入全部" }}
-            </button>
-          </div>
-        </div>
-        <div
-          v-for="item in scanItems"
-          :key="item.path"
-          class="flex items-center gap-3 rounded-lg px-3 py-2 bg-bg-deep border border-bg-border"
-        >
-          <CheckCircle2 v-if="item.found" :size="15" class="text-green-400 shrink-0" />
-          <XCircle v-else :size="15" class="text-muted shrink-0" />
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-white font-mono">{{ item.rjCode }}</span>
-              <span
-                v-if="item.groupName"
-                class="px-1 py-px rounded text-[9px] bg-accent/10 text-accent-light shrink-0"
-              >
-                {{ item.groupName }}
-              </span>
-            </div>
-            <div class="text-[10px] text-muted ellipsis-1">{{ item.path }}</div>
-          </div>
-          <span v-if="item.found" class="text-[10px] text-green-400 shrink-0">
-            {{ item.title || "已入库" }}
-          </span>
-          <button
-            v-else
-            class="btn-primary !text-[10px] !px-2 !py-1 shrink-0"
-            @click="importFound(item)"
-          >
-            <Download :size="11" /> 抓取导入
-          </button>
-        </div>
-      </div>
-    </section>
+        </template>
+      </section>
+    </div>
 
     <!-- 服务端目录选择器 Modal -->
     <FolderPickerModal
@@ -381,3 +355,305 @@ async function importAll() {
     />
   </div>
 </template>
+
+<style scoped>
+.page-wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 26px 28px 150px;
+}
+.page-head {
+  margin-bottom: 22px;
+}
+.page-head h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.page-head .sub {
+  font-size: 13px;
+  color: var(--label-2);
+  margin-top: 3px;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .cols {
+    grid-template-columns: 1fr;
+  }
+}
+.panel {
+  padding: 24px 26px;
+}
+.panel > h2 {
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--label);
+}
+.panel > .desc {
+  font-size: 12.5px;
+  color: var(--label-3);
+  margin-top: 5px;
+}
+
+/* 数据源三选卡（设计稿 .src-seg / .src-opt） */
+.src-seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 18px;
+}
+.src-opt {
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--fill-1);
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-family: inherit;
+}
+.src-opt:hover {
+  background: var(--fill-2);
+}
+.src-opt.on {
+  background: rgba(47, 143, 239, 0.18);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+.src-opt b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label);
+}
+.src-opt.on b {
+  color: var(--blue-deep);
+}
+.src-opt span {
+  display: block;
+  font-size: 11px;
+  color: var(--label-3);
+  margin-top: 3px;
+}
+
+.rj-input-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+.rj-input-row .field {
+  flex: 1;
+  min-width: 0;
+}
+.mono {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  letter-spacing: 0.04em;
+}
+
+/* 预览卡（设计稿 .preview） */
+.preview {
+  margin-top: 20px;
+  padding: 16px;
+  display: flex;
+  gap: 16px;
+  box-shadow: none;
+  background: var(--fill-1);
+}
+.pv-cov {
+  width: 108px;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-card);
+  background: var(--fill-2);
+}
+.pv-cov img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.preview h3 {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--label);
+}
+.pv-rj {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--label-3);
+  margin-top: 4px;
+}
+.pv-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  margin-top: 9px;
+  font-size: 12px;
+  color: var(--label-2);
+}
+.pv-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.btag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--label-2);
+  background: var(--fill-2);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* 关联文件夹 */
+.assoc {
+  margin-top: 20px;
+}
+.assoc h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label-2);
+}
+.assoc-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.assoc-row .field {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+}
+.checkline {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--label-2);
+  cursor: pointer;
+  user-select: none;
+}
+.cbx {
+  width: 17px;
+  height: 17px;
+  border-radius: 5.5px;
+  background: var(--blue);
+  border: none;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+.cbx.off {
+  background: var(--fill-2);
+  color: transparent;
+}
+.import-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.ok-note {
+  font-size: 12px;
+  color: #4cd964;
+  margin-top: 12px;
+}
+
+/* 扫描列表（设计稿 .scan-*） */
+.scan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.scan-head .info {
+  font-size: 12.5px;
+  color: var(--label-2);
+}
+.scan-head .info b {
+  color: var(--label);
+}
+.scan-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.scan-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--fill-1);
+  border-radius: var(--r-md);
+  padding: 11px 14px;
+  font-size: 12.5px;
+}
+.scan-item.done {
+  opacity: 0.75;
+}
+.scan-item .st {
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.scan-item .rj {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.scan-item .grp {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #6cb1f7;
+  background: rgba(47, 143, 239, 0.13);
+  border-radius: 6px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+.scan-item .path {
+  flex: 1;
+  min-width: 0;
+  color: var(--label-3);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.scan-item .title-ok {
+  color: #4cd964;
+  font-size: 12px;
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .page-wrap {
+    padding: 18px 18px 150px;
+  }
+}
+</style>

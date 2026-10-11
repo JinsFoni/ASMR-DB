@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { RefreshCw, Loader2, Trophy } from "lucide-vue-next";
+import { RefreshCw, Loader2 } from "lucide-vue-next";
 import * as api from "../lib/api";
 import type { DlsiteRankingItem } from "../lib/types";
 import DlsiteWorkCard from "../components/dlsite/DlsiteWorkCard.vue";
@@ -135,40 +135,42 @@ onActivated(() => {
 </script>
 
 <template>
-  <div class="p-5 space-y-4">
-    <!-- 工具栏：左侧说明 + 右侧榜单切换/数量/刷新 -->
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div class="text-xs text-muted flex items-center gap-1.5">
-        <Trophy :size="13" class="text-accent-light" />
-        音声作品排行榜
-        <span v-if="fetchedText"> · 更新于 {{ fetchedText }}</span>
+  <div class="page-wrap space-y-5">
+    <!-- 页头：大标题 + 副标题 -->
+    <div class="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 class="page-h1">🏆 音声作品排行榜</h1>
+        <p class="sub">
+          来自 DLsite<template v-if="fetchedText"> · 更新于 {{ fetchedText }}</template>
+        </p>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="flex rounded-lg border border-bg-border overflow-hidden bg-bg-card">
-          <button
-            v-for="t in TERMS"
-            :key="t.value"
-            class="px-3 py-1.5 text-xs transition-colors"
-            :class="term === t.value ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white hover:bg-bg-hover'"
-            @click="switchTerm(t.value)"
-          >
-            {{ t.label }}
-          </button>
-        </div>
-        <select
-          v-model.number="limit"
-          class="input !text-xs !py-1.5 !w-auto"
-          title="显示条数"
-          @change="load()"
+      <button class="btn ghost sm" :disabled="refreshing" title="重新抓取全部榜单（约 10-20 秒）" @click="refresh">
+        <Loader2 v-if="refreshing" :size="13" class="animate-spin" />
+        <RefreshCw v-else :size="13" />
+        刷新
+      </button>
+    </div>
+
+    <!-- 工具栏：榜单周期 + 数量 -->
+    <div class="flex flex-wrap items-center gap-2.5">
+      <div class="seg sm">
+        <button
+          v-for="t in TERMS"
+          :key="t.value"
+          :class="{ on: term === t.value }"
+          @click="switchTerm(t.value)"
         >
-          <option v-for="n in LIMITS" :key="n" :value="n">Top {{ n }}</option>
-        </select>
-        <button class="btn-outline !text-xs !py-1.5" :disabled="refreshing" title="重新抓取全部榜单（约 10-20 秒）" @click="refresh">
-          <Loader2 v-if="refreshing" :size="13" class="animate-spin" />
-          <RefreshCw v-else :size="13" />
-          刷新
+          {{ t.label }}
         </button>
       </div>
+      <select
+        v-model.number="limit"
+        class="seg-select"
+        title="显示条数"
+        @change="load()"
+      >
+        <option v-for="n in LIMITS" :key="n" :value="n">Top {{ n }}</option>
+      </select>
     </div>
 
     <!-- 错误 / 加载 / 空状态 -->
@@ -178,7 +180,7 @@ onActivated(() => {
     </div>
     <div v-else-if="!items.length" class="flex flex-col items-center justify-center py-24 text-muted text-sm gap-3">
       暂无榜单数据
-      <button class="btn-primary !text-xs" :disabled="refreshing" @click="refresh">
+      <button class="btn primary sm" :disabled="refreshing" @click="refresh">
         <Loader2 v-if="refreshing" :size="13" class="animate-spin" />
         <RefreshCw v-else :size="13" />
         立即获取
@@ -186,7 +188,7 @@ onActivated(() => {
     </div>
 
     <!-- 横版卡片网格 -->
-    <div v-else class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(300px, 1fr))">
+    <div v-else class="rank-grid">
       <DlsiteWorkCard
         v-for="item in items"
         :key="`${term}-${item.rj_code}`"
@@ -198,3 +200,31 @@ onActivated(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.page-wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 26px 28px 150px;
+}
+.page-h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sub {
+  font-size: 13px;
+  color: var(--label-2);
+  margin-top: 3px;
+}
+@media (max-width: 900px) {
+  .page-wrap {
+    padding: 18px 18px 150px;
+  }
+}
+.rank-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 18px;
+}
+</style>

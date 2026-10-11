@@ -8,7 +8,7 @@ const store = useWorksStore();
 </script>
 
 <template>
-  <div class="grid gap-3" :style="{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }">
+  <div class="grid gap-[22px]" :style="{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }">
     <WorkCard
       v-for="w in works"
       :key="w.work.id"

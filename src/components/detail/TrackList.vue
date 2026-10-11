@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Play, Pause, Music, ExternalLink, Image as ImageIcon, FileText, File, Folder, ChevronDown, ChevronRight } from "lucide-vue-next";
+import { Music, ExternalLink, Image as ImageIcon, FileText, File, Folder, ChevronDown, ChevronRight } from "lucide-vue-next";
 import type { Track, WorkView, AsmrTreeNode } from "../../lib/types";
 import { usePlayerStore } from "../../stores/player";
 import * as api from "../../lib/api";
@@ -133,124 +133,258 @@ function playTrack(i: number) {
 </script>
 
 <template>
-  <div class="card overflow-hidden">
-    <div class="px-4 py-2.5 border-b border-bg-border flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2 min-w-0">
-        <!-- 音频/全部文件切换（提供文件树时显示） -->
-        <div
-          v-if="props.tree?.length"
-          class="flex rounded-lg border border-bg-border overflow-hidden shrink-0"
-        >
-          <button
-            class="px-2 py-1 text-[10px] transition-colors"
-            :class="viewMode === 'audio' ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white'"
-            @click="viewMode = 'audio'"
-          >
-            音频 {{ tracks.length }}
-          </button>
-          <button
-            class="px-2 py-1 text-[10px] transition-colors"
-            :class="viewMode === 'all' ? 'bg-accent/15 text-accent-light' : 'text-muted hover:text-white'"
-            @click="viewMode = 'all'"
-          >
-            全部文件 {{ totalFileCount }}
-          </button>
-        </div>
-        <div class="text-xs font-semibold text-white">
-          {{ viewMode === "all" ? `📁 文件结构 (${totalFileCount} 个文件)` : `🎵 音轨列表 (${tracks.length})` }}
-        </div>
-      </div>
-      <span class="text-[10px] text-muted shrink-0">
+  <section class="card panel-tracks">
+    <h2>
+      音轨 <span class="n">{{ tracks.length }}</span>
+      <template v-if="props.tree?.length">
+        <span class="tr-switch">
+          <button :class="{ on: viewMode === 'audio' }" @click="viewMode = 'audio'">仅音频</button>
+          <button :class="{ on: viewMode === 'all' }" @click="viewMode = 'all'">全部文件 {{ totalFileCount }}</button>
+        </span>
+      </template>
+      <span class="flex-1" />
+      <span class="tr-sum">
         {{ viewMode === "all" ? `共 ${fmtSize(totalSize)}` : (props.work.total_duration_sec / 60).toFixed(0) + " 分钟" }}
       </span>
-    </div>
+    </h2>
 
     <!-- 全部文件视图：树形结构（文件夹可折叠，子级缩进） -->
-    <div v-if="viewMode === 'all'" class="max-h-96 overflow-y-auto py-1">
+    <div v-if="viewMode === 'all'" class="tracks max-h-96 overflow-y-auto py-1">
       <div
         v-for="r in treeRows"
         :key="r.key"
-        class="flex items-center gap-2 pr-4 py-1.5 hover:bg-bg-hover transition-colors"
+        class="track"
         :class="r.isFolder ? 'cursor-pointer select-none' : ''"
-        :style="{ paddingLeft: 16 + r.depth * 18 + 'px' }"
+        :style="{ paddingLeft: 12 + r.depth * 18 + 'px' }"
         :title="r.isFolder ? '点击折叠/展开' : undefined"
         @click="r.isFolder && toggleFolder(r.key)"
       >
         <template v-if="r.isFolder">
-          <span class="w-4 flex items-center justify-center text-muted shrink-0">
+          <span class="no">
             <ChevronDown v-if="expanded.has(r.key)" :size="12" />
             <ChevronRight v-else :size="12" />
           </span>
-          <span class="w-5 h-5 rounded flex items-center justify-center shrink-0 bg-bg-hover text-muted">
-            <Folder :size="12" />
-          </span>
-          <span class="text-xs text-white/90 ellipsis-1 flex-1 min-w-0">{{ r.title }}</span>
-          <span class="text-[10px] text-muted/70 shrink-0">{{ r.fileCount }} 个文件</span>
+          <span class="f-ico"><Folder :size="12" /></span>
+          <span class="tname">{{ r.title }}</span>
+          <span class="dur">{{ r.fileCount }} 个文件</span>
         </template>
         <template v-else>
-          <span class="w-4 shrink-0" />
-          <span class="w-5 h-5 rounded flex items-center justify-center shrink-0 bg-bg-hover text-muted">
-            <component :is="fileIcon(r.nodeType)" :size="11" />
-          </span>
-          <span class="text-xs text-white/80 ellipsis-1 flex-1 min-w-0">{{ r.title }}</span>
-          <span class="text-[9px] px-1 py-0.5 rounded bg-bg-hover text-muted uppercase shrink-0">
-            {{ typeLabel({ nodeType: r.nodeType, extension: r.extension } as any) }}
-          </span>
-          <span class="text-[10px] text-muted tabular-nums shrink-0 w-16 text-right">
-            {{ fmtSize(r.size) }}
-          </span>
+          <span class="no"><component :is="fileIcon(r.nodeType)" :size="12" /></span>
+          <span class="tname">{{ r.title }}</span>
+          <span class="ftag">{{ typeLabel({ nodeType: r.nodeType, extension: r.extension } as any) }}</span>
+          <span class="dur">{{ fmtSize(r.size) }}</span>
         </template>
       </div>
-      <div v-if="!treeRows.length" class="px-4 py-6 text-center text-xs text-muted">
+      <div v-if="!treeRows.length" class="px-4 py-6 text-center text-xs" style="color: var(--label-3)">
         没有其他文件
       </div>
     </div>
 
     <!-- 音频视图 -->
-    <div v-else class="max-h-96 overflow-y-auto">
-      <div v-if="!tracks.length" class="px-4 py-6 text-center text-xs text-muted">
+    <div v-else class="tracks max-h-96 overflow-y-auto">
+      <div v-if="!tracks.length" class="px-4 py-6 text-center text-xs" style="color: var(--label-3)">
         {{ online ? "asmr.one 上未找到音频文件" : "暂无音轨。下载并解压作品后会自动扫描。" }}
       </div>
       <div
         v-for="(t, i) in tracks"
         :key="t.id"
-        class="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-bg-hover transition-colors group"
-        :class="isCurrent(t) ? 'bg-accent/10' : ''"
-        @dblclick="playTrack(i)"
+        class="track"
+        :class="{ playing: isCurrent(t) }"
+        :title="'点击播放：' + (t.title || t.file_path.split(/[\\/]/).pop())"
+        @click="playTrack(i)"
       >
-        <span class="w-6 text-center text-[11px] font-mono text-muted shrink-0">
-          {{ String(t.track_number || i + 1).padStart(2, "0") }}
-        </span>
-        <button
-          class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 cursor-pointer"
-          :class="isCurrent(t) ? 'bg-accent text-white' : 'bg-bg-hover text-muted group-hover:bg-bg-border group-hover:text-white'"
-          :title="isCurrent(t) ? '当前播放' : '播放'"
-          @click="playTrack(i)"
-        >
-          <Music v-if="!isCurrent(t)" :size="12" />
-          <Play v-else-if="!player.playing" :size="12" />
-          <Pause v-else :size="12" />
-        </button>
-        <div class="flex-1 min-w-0 cursor-pointer" :title="'双击播放：' + (t.title || t.file_path.split(/[\\/]/).pop())" @dblclick="playTrack(i)">
-          <div class="text-xs ellipsis-1" :class="isCurrent(t) ? 'text-accent-light' : 'text-white'">
-            {{ t.title || t.file_path.split(/[\\/]/).pop() }}
-          </div>
-        </div>
+        <!-- 播放中显示 EQ 动画（设计稿 .eq） -->
+        <span v-if="isCurrent(t)" class="eq"><i /><i /><i /></span>
+        <span v-else class="no">{{ String(t.track_number || i + 1).padStart(2, "0") }}</span>
+        <span class="tname">{{ t.title || t.file_path.split(/[\\/]/).pop() }}</span>
         <button
           v-if="!props.online"
-          class="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-bg-hover text-muted hover:text-white hover:bg-bg-border transition-colors"
-          :title="'用本地播放器打开'"
-          @click="openWithPlayer(t)"
+          class="op-local"
+          title="用本地播放器打开"
+          @click.stop="openWithPlayer(t)"
         >
           <ExternalLink :size="11" /> 本地播放器
         </button>
-        <span v-if="t.file_format" class="text-[9px] px-1 py-0.5 rounded bg-bg-hover text-muted uppercase">
-          {{ t.file_format }}
-        </span>
-        <span class="text-[11px] text-muted tabular-nums shrink-0">
-          {{ fmtDuration(t.duration_sec) }}
-        </span>
+        <span class="dur">{{ fmtDuration(t.duration_sec) }}</span>
       </div>
     </div>
-  </div>
+  </section>
 </template>
+
+<style scoped>
+.panel-tracks {
+  margin-top: 30px;
+  padding: 26px 28px;
+}
+.panel-tracks h2 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--label);
+}
+.panel-tracks h2 .n {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--label-3);
+  background: var(--fill-1);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.tr-switch {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--fill-1);
+  border-radius: 999px;
+  padding: 2px;
+  margin-left: 4px;
+}
+.tr-switch button {
+  height: 24px;
+  padding: 0 11px;
+  border: none;
+  background: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--label-2);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tr-switch button.on {
+  background: #48484c;
+  color: #fff;
+}
+html[data-theme="light"] .tr-switch button.on,
+html[data-theme="sakura"] .tr-switch button.on {
+  background: var(--blue);
+}
+.tr-sum {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--label-3);
+}
+
+.tracks {
+  display: flex;
+  flex-direction: column;
+}
+.track {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 12px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.track:hover {
+  background: var(--fill-1);
+}
+.track.playing {
+  background: var(--fill-2);
+}
+.track .no {
+  width: 26px;
+  text-align: center;
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: var(--label-3);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.track .f-ico {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--fill-1);
+  color: var(--label-2);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.track .tname {
+  flex: 1;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.track.playing .tname {
+  color: var(--blue-deep);
+}
+.track .dur {
+  font-size: 12px;
+  color: var(--label-3);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.track .ftag {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--label-3);
+  background: var(--fill-1);
+  border-radius: 5px;
+  padding: 2px 7px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.op-local {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--label-3);
+  background: none;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.op-local:hover {
+  background: var(--fill-2);
+  color: var(--label);
+}
+
+/* 播放中 EQ 动画（设计稿 .track .eq） */
+.track .eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  height: 14px;
+  width: 26px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.track .eq i {
+  width: 3px;
+  border-radius: 2px;
+  background: var(--blue-deep);
+  animation: eq 1s ease-in-out infinite;
+}
+.track .eq i:nth-child(2) {
+  animation-delay: 0.25s;
+}
+.track .eq i:nth-child(3) {
+  animation-delay: 0.5s;
+}
+@keyframes eq {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 14px;
+  }
+}
+</style>

@@ -1,21 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import {
-  Moon,
-  Sun,
-  Sparkles,
-  Palette,
-  Database,
-  FolderOpen,
-  Info,
   Check,
   Loader2,
-  Monitor,
-  Trash2,
   HardDriveDownload,
   HardDriveUpload,
-  Globe,
-  Languages,
 } from "lucide-vue-next";
 import * as api from "../lib/api";
 import FolderPickerModal from "../components/common/FolderPickerModal.vue";
@@ -64,6 +53,12 @@ const asmrLoginMsg = ref<{ ok: boolean; text: string } | null>(null);
 // 目录选择器与数据库导入
 const showFolderPicker = ref(false);
 const importFileInput = ref<HTMLInputElement | null>(null);
+
+const THEMES: { name: ThemeName; label: string; sw: string[] }[] = [
+  { name: "dark", label: "🌙 深色模式", sw: ["#0d0d0f", "#2f8fef", "#f5f5f7"] },
+  { name: "light", label: "☀️ 浅色明亮", sw: ["#f5f5f7", "#0071e3", "#1c1c1e"] },
+  { name: "sakura", label: "✨ 樱花粉系", sw: ["#fff0f3", "#ff6d92", "#5a2a38"] },
+];
 
 onMounted(async () => {
   const s = await api.getSettings();
@@ -226,339 +221,157 @@ function handleDirPicked(dir: string) {
 </script>
 
 <template>
-  <div class="p-5 max-w-2xl space-y-5">
+  <div class="page-wrap">
+    <div class="page-head">
+      <div>
+        <h1>设置</h1>
+        <p class="sub">主题、数据源、网络代理与 LLM 翻译配置</p>
+      </div>
+    </div>
+
     <!-- 主题 -->
-    <section class="card p-4">
-      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
-        <Palette :size="14" class="text-accent" /> 主题风格
-      </h3>
-      <div class="grid grid-cols-3 gap-3">
-        <!-- 深色 -->
+    <section class="card set-card">
+      <h2>🎨 主题风格</h2>
+      <div class="theme-row">
         <button
-          class="flex flex-col items-center justify-center gap-2 p-3 rounded-xl border text-sm transition-all"
-          :class="theme === 'dark' ? 'border-accent bg-accent/15 text-accent-light shadow-md shadow-accent/10 ring-1 ring-accent/30' : 'border-bg-border text-muted hover:text-white hover:bg-bg-hover'"
-          @click="selectTheme('dark')"
+          v-for="t in THEMES"
+          :key="t.name"
+          class="theme-card"
+          :class="{ on: theme === t.name }"
+          @click="selectTheme(t.name)"
         >
-          <div class="flex items-center gap-1.5">
-            <Moon :size="16" />
-            <span class="font-medium text-xs">深色模式</span>
-          </div>
-          <div class="flex gap-1">
-            <span class="w-3 h-3 rounded-full bg-[#12121e] border border-white/20" />
-            <span class="w-3 h-3 rounded-full bg-[#1a1a2e]" />
-            <span class="w-3 h-3 rounded-full bg-[#e94560]" />
-          </div>
-        </button>
-
-        <!-- 浅色 -->
-        <button
-          class="flex flex-col items-center justify-center gap-2 p-3 rounded-xl border text-sm transition-all"
-          :class="theme === 'light' ? 'border-accent bg-accent/15 text-accent-light shadow-md shadow-accent/10 ring-1 ring-accent/30' : 'border-bg-border text-muted hover:text-white hover:bg-bg-hover'"
-          @click="selectTheme('light')"
-        >
-          <div class="flex items-center gap-1.5">
-            <Sun :size="16" />
-            <span class="font-medium text-xs">浅色明亮</span>
-          </div>
-          <div class="flex gap-1">
-            <span class="w-3 h-3 rounded-full bg-[#f6f8fc] border border-black/10" />
-            <span class="w-3 h-3 rounded-full bg-[#ffffff] border border-black/10" />
-            <span class="w-3 h-3 rounded-full bg-[#e11d48]" />
-          </div>
-        </button>
-
-        <!-- 粉色系 -->
-        <button
-          class="flex flex-col items-center justify-center gap-2 p-3 rounded-xl border text-sm transition-all"
-          :class="theme === 'sakura' ? 'border-accent bg-accent/15 text-accent-light shadow-md shadow-accent/10 ring-1 ring-accent/30' : 'border-bg-border text-muted hover:text-white hover:bg-bg-hover'"
-          @click="selectTheme('sakura')"
-        >
-          <div class="flex items-center gap-1.5">
-            <Sparkles :size="16" class="text-pink-400" />
-            <span class="font-medium text-xs">樱花粉系</span>
-          </div>
-          <div class="flex gap-1">
-            <span class="w-3 h-3 rounded-full bg-[#fff5f8] border border-pink-300" />
-            <span class="w-3 h-3 rounded-full bg-[#fce7f3] border border-pink-300" />
-            <span class="w-3 h-3 rounded-full bg-[#ec4899]" />
-          </div>
+          <span class="sw">
+            <i v-for="(c, i) in t.sw" :key="i" :style="{ background: c }" />
+          </span>
+          <b>{{ t.label }}</b>
         </button>
       </div>
     </section>
 
     <!-- 下载 -->
-    <section class="card p-4">
-      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
-        <FolderOpen :size="14" class="text-accent" /> 下载设置
-      </h3>
-      <div class="flex gap-2">
-        <input
-          v-model="downloadDir"
-          class="input flex-1 !text-xs"
-          placeholder="默认下载目录"
-        />
-        <button class="btn-outline" @click="pickDir">浏览</button>
+    <section class="card set-card">
+      <h2>📦 下载设置</h2>
+      <div class="set-row">
+        <span class="k">默认下载目录</span>
+        <div class="field"><input v-model="downloadDir" placeholder="默认下载目录" /></div>
+        <button class="btn" @click="pickDir">浏览</button>
       </div>
     </section>
 
-    <!-- asmr.one 数据源 -->
-    <section class="card p-4">
-      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
-        <Monitor :size="14" class="text-accent" /> asmr.one 数据源
-      </h3>
-      <p class="text-[11px] text-muted mb-2">
-        推荐直接填写下方的<b class="text-white/80">站点地址、账号和密码</b>，点击「保存并登录」即可自动获取
-        Token（会在本机数据库中保存凭据）。也可以手动方式：用浏览器打开并登录
-        <b class="text-white/80">www.asmr.one</b>，按 <b class="text-white/80">F12</b> →
-        应用（Application）→ 本地存储（Local Storage）→ www.asmr.one，复制里面
-        <b class="text-white/80">以 <code class="text-accent">eyJ</code> 开头</b>的长字符串（JWT），
-        粘贴到下面保存即可。
+    <!-- asmr.one -->
+    <section class="card set-card">
+      <h2>🎧 asmr.one 数据源</h2>
+      <p class="desc">
+        用于在线浏览与下载音声。推荐直接填写下方<b style="color: var(--label)">站点地址、账号和密码</b>后「保存并登录」自动获取
+        Token；也可手动获取：浏览器登录 asmr.one → F12 → 应用 → 本地存储 → 复制 <code>eyJ</code> 开头的 Token。
       </p>
-      <!-- 站点配置自动登录 -->
-      <div class="space-y-2 mb-3">
-        <input
-          v-model="asmrAddress"
-          class="input w-full !text-xs font-mono"
-          placeholder="asmr.one 地址（可选，默认 https://api.asmr.one，可填镜像如 api.asmr-200.com）"
-        />
-        <div class="flex gap-2">
-          <input
-            v-model="asmrUsername"
-            class="input flex-1 !text-xs"
-            placeholder="账号（邮箱）"
-            autocomplete="off"
-          />
-          <input
-            v-model="asmrPassword"
-            type="password"
-            class="input flex-1 !text-xs"
-            placeholder="密码"
-            autocomplete="new-password"
-            @keyup.enter="saveAndLoginAsmr"
-          />
-          <button class="btn-primary !text-xs shrink-0" :disabled="asmrLoginLoading" @click="saveAndLoginAsmr">
-            <Loader2 v-if="asmrLoginLoading" :size="13" class="animate-spin" />
-            <Check v-else :size="13" />
-            保存并登录
-          </button>
-        </div>
-        <p v-if="asmrLoginMsg" class="text-[11px]" :class="asmrLoginMsg.ok ? 'text-green-400' : 'text-accent'">
-          {{ asmrLoginMsg.ok ? "✅" : "⚠️" }} {{ asmrLoginMsg.text }}
-        </p>
+      <div class="set-row">
+        <span class="k">站点地址</span>
+        <div class="field"><input v-model="asmrAddress" placeholder="asmr.one 地址(可选,默认 https://api.asmr.one,可填镜像)" /></div>
       </div>
-      <textarea
-        v-model="asmrToken"
-        rows="3"
-        class="w-full rounded-lg bg-bg-hover border border-bg-border px-3 py-2 text-xs text-white font-mono resize-none outline-none focus:border-accent/60"
-        placeholder="粘贴 asmr.one 的 Token（eyJ... 开头）"
-      ></textarea>
-      <div class="flex items-center gap-3 mt-3">
-        <span class="text-xs" :class="hasAsmrToken ? 'text-green-400' : 'text-muted'">
-          {{ hasAsmrToken ? "✅ 已填 Token" : "⚪ 未填写" }}
+      <div class="set-row">
+        <span class="k">账号(邮箱)</span>
+        <div class="field"><input v-model="asmrUsername" placeholder="账号(邮箱)" autocomplete="off" /></div>
+      </div>
+      <div class="set-row">
+        <span class="k">密码</span>
+        <div class="field"><input v-model="asmrPassword" type="password" placeholder="密码" autocomplete="new-password" @keyup.enter="saveAndLoginAsmr" /></div>
+        <button class="btn primary" :disabled="asmrLoginLoading" @click="saveAndLoginAsmr">
+          <Loader2 v-if="asmrLoginLoading" :size="13" class="animate-spin" />
+          保存并登录
+        </button>
+      </div>
+      <p v-if="asmrLoginMsg" class="desc" :style="{ color: asmrLoginMsg.ok ? 'var(--green)' : 'var(--red)' }">
+        {{ asmrLoginMsg.ok ? "✅" : "⚠️" }} {{ asmrLoginMsg.text }}
+      </p>
+      <div class="set-row" style="align-items: flex-start">
+        <span class="k" style="padding-top: 9px">Token</span>
+        <div class="field auto">
+          <textarea v-model="asmrToken" rows="2" class="mono" placeholder="粘贴 asmr.one 的 Token(eyJ... 开头)" />
+        </div>
+      </div>
+      <div class="set-row">
+        <span class="k" />
+        <span class="note" :style="{ color: hasAsmrToken ? 'var(--green)' : 'var(--label-3)' }">
+          {{ hasAsmrToken ? "✅ 已填 Token" : "未填写" }}
         </span>
-        <div class="flex-1" />
-        <button class="btn-primary !text-xs" :disabled="!hasAsmrToken" @click="saveAsmrToken">
-          <Check v-if="!asmrSaved" :size="13" />
-          <Loader2 v-else :size="13" class="animate-spin" />
-          {{ asmrSaved ? "已保存" : "保存 Token" }}
+        <button class="btn" :disabled="!hasAsmrToken || asmrSaved" @click="saveAsmrToken">
+          <Check v-if="asmrSaved" :size="13" style="color: var(--green)" />
+          保存 Token
         </button>
-        <button v-if="hasAsmrToken" class="btn-ghost !text-xs !text-accent" @click="clearAsmr">
-          <Trash2 :size="13" /> 清除
-        </button>
+        <button class="btn danger" @click="clearAsmr">清除</button>
       </div>
     </section>
 
-    <!-- 网络代理 -->
-    <section class="card p-4">
-      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
-        <Globe :size="14" class="text-accent" /> 网络代理
-      </h3>
-      <div class="flex gap-2">
-        <input
-          v-model="proxyUrl"
-          class="input flex-1 !text-xs font-mono"
-          placeholder="代理地址，如 http://127.0.0.1:8502"
-          @keyup.enter="saveProxy"
-        />
-        <button class="btn-primary !text-xs" :disabled="proxySaving" @click="saveProxy">
-          <Check v-if="!proxySaved" :size="13" />
-          <Loader2 v-else :size="13" class="animate-spin" />
-          {{ proxySaved ? "已保存" : "保存" }}
+    <!-- 代理 -->
+    <section class="card set-card">
+      <h2>🌐 网络代理</h2>
+      <div class="set-row">
+        <span class="k">代理地址</span>
+        <div class="field"><input v-model="proxyUrl" placeholder="代理地址,如 http://127.0.0.1:8502" @keyup.enter="saveProxy" /></div>
+        <button class="btn" :disabled="proxySaving" @click="saveProxy">
+          <Check v-if="proxySaved" :size="13" style="color: var(--green)" />
+          保存
         </button>
       </div>
-      <p class="text-[11px] text-muted mt-2">
-        DLsite 与 asmr.one 的抓取、下载可分别决定是否走此代理（仅支持 HTTP 代理，地址可不带 http:// 前缀）。保存后对新发起的请求立即生效。
-      </p>
-      <div class="mt-3 pt-3 border-t border-bg-border space-y-2.5">
-        <label class="flex items-center justify-between cursor-pointer select-none">
-          <span class="text-xs text-white/80">DLsite 请求走代理</span>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="proxyDlsite"
-            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
-            :class="proxyDlsite ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
-            @click="proxyDlsite = !proxyDlsite"
-          >
-            <span
-              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-              :class="proxyDlsite ? 'translate-x-4' : ''"
-            />
-          </button>
-        </label>
-        <label class="flex items-center justify-between cursor-pointer select-none">
-          <span class="text-xs text-white/80">ASMR ONE 请求走代理</span>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="proxyAsmrone"
-            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
-            :class="proxyAsmrone ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
-            @click="proxyAsmrone = !proxyAsmrone"
-          >
-            <span
-              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-              :class="proxyAsmrone ? 'translate-x-4' : ''"
-            />
-          </button>
-        </label>
-        <label class="flex items-center justify-between cursor-pointer select-none">
-          <span class="text-xs text-white/80">LLM 请求走代理</span>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="proxyLlm"
-            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
-            :class="proxyLlm ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
-            @click="proxyLlm = !proxyLlm"
-          >
-            <span
-              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-              :class="proxyLlm ? 'translate-x-4' : ''"
-            />
-          </button>
-        </label>
-      </div>
+      <p class="desc">DLsite 与 asmr.one 的抓取、下载可分别决定是否走此代理（仅支持 HTTP 代理）。保存后对新发起的请求立即生效。</p>
+      <div class="switch-row"><span class="lbl">DLsite 请求走代理</span><button type="button" role="switch" class="ios-switch" :class="{ on: proxyDlsite }" :aria-checked="proxyDlsite" @click="proxyDlsite = !proxyDlsite" /></div>
+      <div class="switch-row"><span class="lbl">ASMR ONE 请求走代理</span><button type="button" role="switch" class="ios-switch" :class="{ on: proxyAsmrone }" :aria-checked="proxyAsmrone" @click="proxyAsmrone = !proxyAsmrone" /></div>
+      <div class="switch-row"><span class="lbl">LLM 请求走代理</span><button type="button" role="switch" class="ios-switch" :class="{ on: proxyLlm }" :aria-checked="proxyLlm" @click="proxyLlm = !proxyLlm" /></div>
     </section>
 
-    <!-- LLM 翻译 -->
-    <section class="card p-4">
-      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
-        <Languages :size="14" class="text-accent" /> LLM 翻译
-      </h3>
-      <p class="text-[11px] text-muted mb-3">
-        使用 OpenAI 兼容接口把作品的日文标题/简介翻译成简体中文。API 端点填服务地址（如
-        <code class="text-accent">https://api.deepseek.com/v1</code>，兼容 one-api、本地 Ollama 等）。
-      </p>
-      <div class="space-y-2">
-        <input
-          v-model="llmEndpoint"
-          class="input w-full !text-xs font-mono"
-          placeholder="API 端点，如 https://api.deepseek.com/v1"
-        />
-        <div class="flex gap-2">
-          <input
-            v-model="llmApiKey"
-            type="password"
-            class="input flex-1 !text-xs font-mono"
-            placeholder="API 密钥"
-            autocomplete="new-password"
-          />
-          <input
-            v-model="llmModel"
-            class="input flex-1 !text-xs font-mono"
-            placeholder="模型，如 deepseek-chat"
-          />
-        </div>
-        <div class="grid grid-cols-3 gap-2">
-          <label class="text-[10px] text-muted">
-            最大重试次数
-            <input v-model.number="llmMaxRetry" type="number" min="0" max="10" class="input w-full !text-xs mt-0.5" />
-          </label>
-          <label class="text-[10px] text-muted">
-            每秒请求上限
-            <input v-model.number="llmRps" type="number" min="1" max="100" class="input w-full !text-xs mt-0.5" />
-          </label>
-          <label class="text-[10px] text-muted">
-            翻译线程数（1-4）
-            <input v-model.number="llmThreads" type="number" min="1" max="4" class="input w-full !text-xs mt-0.5" />
-          </label>
-        </div>
-        <label class="flex items-center justify-between cursor-pointer select-none pt-1">
-          <span class="text-xs text-white/80">入库自动翻译（作品入库后自动加入翻译队列）</span>
-          <button
-            type="button"
-            role="switch"
-            :aria-checked="llmAuto"
-            class="relative w-9 h-5 rounded-full transition-colors shrink-0"
-            :class="llmAuto ? 'bg-accent' : 'bg-bg-hover border border-bg-border'"
-            @click="llmAuto = !llmAuto"
-          >
-            <span
-              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-              :class="llmAuto ? 'translate-x-4' : ''"
-            />
-          </button>
-        </label>
-        <label class="text-[10px] text-muted block">
-          翻译 Prompt（留空使用系统默认）
-          <textarea
-            v-model="llmPrompt"
-            rows="3"
-            class="w-full rounded-lg bg-bg-hover border border-bg-border px-3 py-2 text-xs text-white font-mono resize-none outline-none focus:border-accent/60 mt-0.5"
-            :placeholder="llmPrompt || '留空使用系统默认 Prompt'"
-          ></textarea>
-        </label>
+    <!-- LLM -->
+    <section class="card set-card">
+      <h2>🈶 LLM 翻译</h2>
+      <p class="desc">任意 OpenAI 兼容接口均可,例如:<span class="mono-inline">https://api.openai.com/v1</span></p>
+      <div class="grid2">
+        <div class="set-row tight"><span class="k">API 端点</span><div class="field"><input v-model="llmEndpoint" placeholder="https://api.deepseek.com/v1" /></div></div>
+        <div class="set-row tight"><span class="k">API 密钥</span><div class="field"><input v-model="llmApiKey" type="password" placeholder="sk-..." autocomplete="new-password" /></div></div>
+        <div class="set-row tight"><span class="k">模型</span><div class="field"><input v-model="llmModel" placeholder="deepseek-chat" /></div></div>
       </div>
-      <div class="flex items-center gap-3 mt-3">
-        <span class="text-[11px] text-muted">保存后对新发起的翻译任务生效</span>
-        <div class="flex-1" />
-        <button class="btn-primary !text-xs" :disabled="llmSaving" @click="saveLlm">
-          <Check v-if="!llmSaved" :size="13" />
-          <Loader2 v-else :size="13" class="animate-spin" />
-          {{ llmSaved ? "已保存" : "保存配置" }}
+      <div class="grid2">
+        <div class="set-row tight"><span class="k">最大重试次数</span><div class="field"><input v-model.number="llmMaxRetry" type="number" min="0" max="10" /></div></div>
+        <div class="set-row tight"><span class="k">每秒请求上限</span><div class="field"><input v-model.number="llmRps" type="number" min="1" max="100" /></div></div>
+        <div class="set-row tight"><span class="k">翻译线程数(1-4)</span><div class="field"><input v-model.number="llmThreads" type="number" min="1" max="4" /></div></div>
+      </div>
+      <div class="switch-row"><span class="lbl">入库自动翻译(作品入库后自动加入翻译队列)</span><button type="button" role="switch" class="ios-switch" :class="{ on: llmAuto }" :aria-checked="llmAuto" @click="llmAuto = !llmAuto" /></div>
+      <div class="set-row" style="align-items: flex-start">
+        <span class="k" style="padding-top: 9px">翻译 Prompt</span>
+        <div class="field auto"><textarea v-model="llmPrompt" rows="2" placeholder="翻译 Prompt(留空使用系统默认)" /></div>
+      </div>
+      <div class="save-bar" style="margin-top: 20px">
+        <span class="hint">保存后对新发起的翻译任务生效</span>
+        <button class="btn primary" :disabled="llmSaving" @click="saveLlm">
+          <Check v-if="llmSaved" :size="13" style="color: #c9f2d4" />
+          保存配置
         </button>
       </div>
     </section>
 
     <!-- 数据库 -->
-    <section class="card p-4">
-      <h3 class="text-xs font-semibold text-white flex items-center gap-1.5 mb-3">
-        <Database :size="14" class="text-accent" /> 数据库
-      </h3>
-      <div class="flex items-center gap-2">
-        <span class="text-xs text-muted ellipsis-1 flex-1 font-mono">{{ dbPath || "加载中..." }}</span>
-        <button class="btn-outline !text-xs" @click="api.openFolder(dbPath)">打开目录</button>
+    <section class="card set-card">
+      <h2>🗄️ 数据库</h2>
+      <div class="set-row">
+        <span class="k">数据库文件</span>
+        <span class="v">{{ dbPath || "加载中..." }}</span>
+        <button class="btn" @click="api.openFolder(dbPath)">打开目录</button>
       </div>
-      <div class="text-[11px] text-muted mt-2 flex items-start gap-1.5">
-        <Info :size="12" class="mt-0.5 shrink-0" />
-        <span>数据库存放在服务端程序同级目录下，备份只需复制该文件。也可使用下方导出 / 导入功能进行数据迁移。</span>
-      </div>
-      <!-- 数据迁移 -->
-      <div class="flex items-center gap-2 mt-3 pt-3 border-t border-bg-border">
-        <span class="text-xs text-white/70 mr-auto">数据迁移</span>
-        <button class="btn-outline !text-xs flex items-center gap-1" @click="exportDb">
-          <HardDriveDownload :size="13" /> 导出备份
-        </button>
-        <button class="btn-outline !text-xs flex items-center gap-1 !border-amber-500/40 !text-amber-400 hover:!bg-amber-500/10" @click="triggerImportDb">
-          <HardDriveUpload :size="13" /> 导入还原
-        </button>
-        <input
-          ref="importFileInput"
-          type="file"
-          accept=".db,application/octet-stream"
-          class="hidden"
-          @change="onImportFile"
-        />
+      <p class="desc">数据迁移会将全部作品、标签、翻译与设置打包导出,或从备份文件还原。</p>
+      <p class="amber-warn">⚠️ 导入还原将覆盖服务器上的当前所有数据!(当前数据库会自动备份为 .db.bak)</p>
+      <div class="flex gap-2.5 mt-3.5">
+        <button class="btn" @click="exportDb"><HardDriveDownload :size="14" /> 导出备份</button>
+        <button class="btn danger" @click="triggerImportDb"><HardDriveUpload :size="14" /> 导入还原</button>
       </div>
     </section>
 
-    <!-- 保存 -->
-    <button class="btn-primary" @click="save">
-      <Loader2 v-if="saved" :size="15" class="animate-spin" />
-      <Check v-else :size="15" />
-      {{ saved ? "已保存" : "保存设置" }}
-    </button>
+    <div class="save-bar">
+      <span class="hint">部分设置保存后立即生效</span>
+      <button class="btn primary" @click="save">
+        <Loader2 v-if="saved" :size="14" class="animate-spin" />
+        <Check v-else :size="14" style="color: #c9f2d4" />
+        {{ saved ? "已保存" : "保存设置" }}
+      </button>
+    </div>
 
     <!-- 服务端目录选择器 Modal -->
     <FolderPickerModal
@@ -567,5 +380,224 @@ function handleDirPicked(dir: string) {
       @close="showFolderPicker = false"
       @select="handleDirPicked"
     />
+
+    <input
+      ref="importFileInput"
+      type="file"
+      accept=".db,application/octet-stream"
+      class="hidden"
+      @change="onImportFile"
+    />
   </div>
 </template>
+
+<style scoped>
+.page-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 26px 28px 150px;
+}
+.page-head {
+  margin-bottom: 22px;
+}
+.page-head h1 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.page-head .sub {
+  font-size: 13px;
+  color: var(--label-2);
+  margin-top: 3px;
+}
+
+.set-card {
+  padding: 24px 26px;
+}
+.set-card + .set-card,
+.set-card + .save-bar {
+  margin-top: 18px;
+}
+.set-card > h2 {
+  font-size: 16.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--label);
+}
+.set-card > .desc {
+  font-size: 12.5px;
+  color: var(--label-3);
+  margin-top: 6px;
+  line-height: 1.7;
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 18px;
+}
+.set-row.tight {
+  margin-top: 14px;
+}
+.set-row .k {
+  width: 150px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label-2);
+  flex-shrink: 0;
+}
+.set-row.tight .k {
+  width: 110px;
+}
+.set-row .v {
+  flex: 1;
+  font-size: 13px;
+  color: var(--label-2);
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-row .note {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--label-3);
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+}
+.field.auto {
+  height: auto;
+  padding: 10px 15px;
+  background: var(--bg-secondary);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card), inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  display: flex;
+  color: var(--label-3);
+}
+.field.auto:focus-within {
+  box-shadow: 0 0 0 4px rgba(47, 143, 239, 0.35), var(--shadow-card);
+}
+textarea {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--label);
+}
+textarea::placeholder {
+  color: var(--label-3);
+}
+.mono {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+}
+.mono-inline {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+}
+
+/* 主题卡（设计稿 .theme-row / .theme-card） */
+.theme-row {
+  display: flex;
+  gap: 14px;
+  margin-top: 18px;
+}
+.theme-card {
+  flex: 1;
+  border: none;
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  background: var(--fill-1);
+  padding: 16px;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.2s;
+}
+.theme-card:hover {
+  background: var(--fill-2);
+}
+.theme-card.on {
+  background: rgba(47, 143, 239, 0.15);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+.theme-card .sw {
+  display: flex;
+  gap: 6px;
+}
+.theme-card .sw i {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.18);
+}
+.theme-card b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label);
+  margin-top: 11px;
+}
+.theme-card.on b {
+  color: var(--blue-deep);
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.switch-row .lbl {
+  font-size: 13px;
+  color: var(--label-2);
+  font-weight: 500;
+}
+
+.save-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  margin-top: 26px;
+}
+.save-bar .hint {
+  font-size: 12px;
+  color: var(--label-3);
+}
+
+.amber-warn {
+  font-size: 11.5px;
+  color: #ffb340;
+  margin-top: 10px;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+@media (max-width: 900px) {
+  .page-wrap {
+    padding: 18px 18px 150px;
+  }
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+  .set-row {
+    flex-wrap: wrap;
+  }
+  .set-row .k {
+    width: 100%;
+  }
+}
+</style>
