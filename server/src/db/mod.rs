@@ -47,7 +47,9 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             circle_id       TEXT,
             cover_url       TEXT,
             work_type       TEXT    NOT NULL DEFAULT 'voice',
-            price           INTEGER,
+            dl_count        INTEGER,
+            wishlist_count  INTEGER,
+            rating          REAL,
             sale_date       TEXT,
             description     TEXT,
             age_class       TEXT,
@@ -184,11 +186,11 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
             title       TEXT,
             circle_name TEXT,
             cover_url   TEXT,
-            price       INTEGER,
             sale_date   TEXT,
             dl_count    INTEGER,
             rating      REAL,
             tags_json   TEXT,
+            vas_json    TEXT,
             fetched_at  TEXT    NOT NULL DEFAULT (datetime('now')),
             PRIMARY KEY (term, position)
         );
@@ -257,6 +259,12 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
 
     // 旧库补列：works.description_zh（LLM 翻译的中文简介，已存在则忽略）
     let _ = conn.execute("ALTER TABLE works ADD COLUMN description_zh TEXT", []);
+    // 旧库补列：dlsite_rankings.vas_json（榜单条目的声优列表，已存在则忽略）
+    let _ = conn.execute("ALTER TABLE dlsite_rankings ADD COLUMN vas_json TEXT", []);
+    // 旧库补列：works.dl_count / wishlist_count / rating（售出、收藏与评分，已存在则忽略）
+    let _ = conn.execute("ALTER TABLE works ADD COLUMN dl_count INTEGER", []);
+    let _ = conn.execute("ALTER TABLE works ADD COLUMN wishlist_count INTEGER", []);
+    let _ = conn.execute("ALTER TABLE works ADD COLUMN rating REAL", []);
 
     Ok(())
 }

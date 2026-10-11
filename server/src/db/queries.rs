@@ -14,7 +14,9 @@ pub fn row_to_work(row: &Row) -> rusqlite::Result<Work> {
         circle_id: row.get("circle_id")?,
         cover_url: row.get("cover_url")?,
         work_type: row.get("work_type")?,
-        price: row.get("price")?,
+        dl_count: row.get("dl_count")?,
+        wishlist_count: row.get("wishlist_count")?,
+        rating: row.get("rating")?,
         sale_date: row.get("sale_date")?,
         description: row.get("description")?,
         age_class: row.get("age_class")?,
@@ -192,12 +194,16 @@ pub fn get_work_by_rj(conn: &Connection, rj: &str) -> Result<Option<Work>, rusql
 pub fn upsert_work(conn: &Connection, w: &ScrapedWork) -> Result<i64, rusqlite::Error> {
     conn.execute(
         r#"INSERT INTO works (rj_code, title_ja, title_zh, title_en, circle_name, circle_id,
-            cover_url, work_type, price, sale_date, description, age_class, duration_min, file_size_mb, dlsite_url)
-           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
+            cover_url, work_type, dl_count, wishlist_count, rating, sale_date, description, age_class, duration_min, file_size_mb, dlsite_url)
+           VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)
            ON CONFLICT(rj_code) DO UPDATE SET
             title_ja=excluded.title_ja, title_zh=COALESCE(excluded.title_zh, works.title_zh), title_en=excluded.title_en,
             circle_name=excluded.circle_name, circle_id=excluded.circle_id, cover_url=excluded.cover_url,
-            work_type=excluded.work_type, price=excluded.price, sale_date=excluded.sale_date,
+            work_type=excluded.work_type,
+            dl_count=COALESCE(excluded.dl_count, works.dl_count),
+            wishlist_count=COALESCE(excluded.wishlist_count, works.wishlist_count),
+            rating=COALESCE(excluded.rating, works.rating),
+            sale_date=excluded.sale_date,
             description=excluded.description, age_class=excluded.age_class,
             duration_min=excluded.duration_min, file_size_mb=excluded.file_size_mb,
             dlsite_url=excluded.dlsite_url, updated_at=datetime('now')"#,
@@ -210,7 +216,9 @@ pub fn upsert_work(conn: &Connection, w: &ScrapedWork) -> Result<i64, rusqlite::
             w.circle_id,
             w.cover_url,
             w.work_type,
-            w.price,
+            w.dl_count,
+            w.wishlist_count,
+            w.rating,
             w.sale_date,
             w.description,
             w.age_class,
@@ -244,9 +252,9 @@ pub fn upsert_work(conn: &Connection, w: &ScrapedWork) -> Result<i64, rusqlite::
 pub fn update_work(conn: &Connection, w: &Work) -> Result<(), rusqlite::Error> {
     conn.execute(
         r#"UPDATE works SET title_ja=?1, title_zh=?2, title_en=?3, circle_name=?4,
-            cover_url=?5, work_type=?6, price=?7, sale_date=?8, description=?9,
-            age_class=?10, duration_min=?11, file_size_mb=?12, dlsite_url=?13,
-            description_zh=?14, updated_at=datetime('now') WHERE id=?15"#,
+            cover_url=?5, work_type=?6, dl_count=?7, wishlist_count=?8, rating=?9, sale_date=?10,
+            description=?11, age_class=?12, duration_min=?13, file_size_mb=?14, dlsite_url=?15,
+            description_zh=?16, updated_at=datetime('now') WHERE id=?17"#,
         params![
             w.title_ja,
             w.title_zh,
@@ -254,7 +262,9 @@ pub fn update_work(conn: &Connection, w: &Work) -> Result<(), rusqlite::Error> {
             w.circle_name,
             w.cover_url,
             w.work_type,
-            w.price,
+            w.dl_count,
+            w.wishlist_count,
+            w.rating,
             w.sale_date,
             w.description,
             w.age_class,
@@ -371,8 +381,7 @@ pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>, rusqlite::Error> {
     let rows = stmt.query_map([], |row| {
         Ok(Tag {
             id: row.get("id")?,
-            // 同 list_work_tags：旧数据的日文标签读取时兜底翻译
-            name: crate::api::tagmap::zh(&row.get::<_, String>("name")?).to_string(),
+            name: row.get("name")?,
             color: row.get("color")?,
             is_preset: row.get::<_, i64>("is_preset")? != 0,
         })
@@ -420,8 +429,7 @@ fn list_work_tags(conn: &Connection, work_id: i64) -> Result<Vec<Tag>, rusqlite:
     let rows = stmt.query_map(params![work_id], |row| {
         Ok(Tag {
             id: row.get("id")?,
-            // 库里存的可能是旧数据的日文标签，读取时经映射表兜底翻译
-            name: crate::api::tagmap::zh(&row.get::<_, String>("name")?).to_string(),
+            name: row.get("name")?,
             color: row.get("color")?,
             is_preset: row.get::<_, i64>("is_preset")? != 0,
         })
@@ -483,6 +491,12 @@ pub fn set_work_actors(conn: &Connection, work_id: i64, names: &[String]) -> Res
 
 /// 为作品设置标签（仅自动标签，非覆盖用户标签）
 pub fn set_work_auto_tags(conn: &Connection, work_id: i64, names: &[String]) -> Result<(), rusqlite::Error> {
+    // 抓取语言切换（如日文→简体中文）后重新导入时，替换掉上一轮的自动标签，
+    // 避免癒し/治愈 这类同义新旧标签并存；手动标签（is_auto=0）不受影响。
+    conn.execute(
+        "DELETE FROM work_tags WHERE work_id = ?1 AND is_auto = 1",
+        params![work_id],
+    )?;
     for name in names {
         if name.trim().is_empty() {
             continue;
@@ -816,11 +830,12 @@ pub fn replace_rankings(
     conn.execute("DELETE FROM dlsite_rankings WHERE term = ?1", params![term])?;
     let mut stmt = conn.prepare(
         "INSERT INTO dlsite_rankings
-            (term, position, rank, rj_code, title, circle_name, cover_url, price, sale_date, dl_count, rating, tags_json)
+            (term, position, rank, rj_code, title, circle_name, cover_url, sale_date, dl_count, rating, tags_json, vas_json)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
     )?;
     for (idx, e) in entries.iter().enumerate() {
         let tags_json = serde_json::to_string(&e.tags).unwrap_or_else(|_| "[]".into());
+        let vas_json = serde_json::to_string(&e.vas).unwrap_or_else(|_| "[]".into());
         stmt.execute(params![
             term,
             (idx + 1) as i64,
@@ -829,11 +844,11 @@ pub fn replace_rankings(
             e.title,
             e.circle_name,
             e.cover_url,
-            e.price,
             e.sale_date,
             e.dl_count,
             e.rating,
             tags_json,
+            vas_json,
         ])?;
     }
     Ok(())
@@ -846,12 +861,13 @@ pub fn list_rankings(
     limit: i64,
 ) -> Result<Vec<DlsiteRankingItem>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        r#"SELECT r.rank, r.rj_code, r.title, r.circle_name, r.cover_url, r.price, r.sale_date,
+        r#"SELECT r.rank, r.rj_code, r.title, r.circle_name, r.cover_url, r.sale_date,
                   r.dl_count, r.rating, r.tags_json, r.fetched_at, w.id,
                   (SELECT MAX(CASE WHEN lf.download_status = 'downloaded' THEN 2
                                    WHEN lf.download_status = 'downloading' THEN 1
                                    ELSE 0 END)
-                   FROM local_files lf WHERE lf.work_id = w.id) AS st
+                   FROM local_files lf WHERE lf.work_id = w.id) AS st,
+                  r.vas_json
            FROM dlsite_rankings r
            LEFT JOIN works w ON w.rj_code = r.rj_code
            WHERE r.term = ?1
@@ -859,9 +875,10 @@ pub fn list_rankings(
            LIMIT ?2"#,
     )?;
     let rows = stmt.query_map(params![term, limit], |row| {
-        let tags_json: Option<String> = row.get(9)?;
-        let work_id: Option<i64> = row.get(11)?;
-        let st: Option<i64> = row.get(12)?;
+        let tags_json: Option<String> = row.get(8)?;
+        let work_id: Option<i64> = row.get(10)?;
+        let st: Option<i64> = row.get(11)?;
+        let vas_json: Option<String> = row.get(12)?;
         let download_status = work_id.map(|_| match st.unwrap_or(0) {
             2 => "downloaded",
             1 => "downloading",
@@ -873,18 +890,18 @@ pub fn list_rankings(
             title: row.get(2)?,
             circle_name: row.get(3)?,
             cover_url: row.get(4)?,
-            price: row.get(5)?,
-            sale_date: row.get(6)?,
-            dl_count: row.get(7)?,
-            rating: row.get(8)?,
-            // 读取时兜底翻译：旧抓取数据里存的日文标签也能显示为中文
+            sale_date: row.get(5)?,
+            dl_count: row.get(6)?,
+            rating: row.get(7)?,
             tags: tags_json
                 .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
-                .map(|v| crate::api::tagmap::zh_all(&v))
+                .unwrap_or_default(),
+            vas: vas_json
+                .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
                 .unwrap_or_default(),
             work_id,
             download_status: download_status.map(String::from),
-            fetched_at: row.get(10)?,
+            fetched_at: row.get(9)?,
         })
     })?;
     rows.collect()
@@ -938,7 +955,7 @@ mod tests {
                 title_ja TEXT, title_zh TEXT, title_en TEXT,
                 circle_name TEXT, circle_id TEXT, cover_url TEXT,
                 work_type TEXT NOT NULL DEFAULT 'voice',
-                price INTEGER, sale_date TEXT, description TEXT,
+                dl_count INTEGER, wishlist_count INTEGER, rating REAL, sale_date TEXT, description TEXT,
                 age_class TEXT, duration_min INTEGER, file_size_mb REAL,
                 dlsite_url TEXT, description_zh TEXT, created_at TEXT, updated_at TEXT
             );
@@ -967,8 +984,8 @@ mod tests {
             CREATE TABLE dlsite_rankings (
                 term TEXT NOT NULL, position INTEGER NOT NULL, rank INTEGER NOT NULL,
                 rj_code TEXT NOT NULL, title TEXT, circle_name TEXT, cover_url TEXT,
-                price INTEGER, sale_date TEXT, dl_count INTEGER, rating REAL, tags_json TEXT,
-                fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+                sale_date TEXT, dl_count INTEGER, rating REAL, tags_json TEXT,
+                vas_json TEXT, fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
                 PRIMARY KEY (term, position)
             );
             CREATE VIRTUAL TABLE works_fts USING fts5(rj_code, title_ja, title_zh, title_en, circle_name, description);
@@ -1069,11 +1086,11 @@ mod tests {
             title: Some("测试作品".into()),
             circle_name: Some("测试社团".into()),
             cover_url: None,
-            price: Some(1320),
             sale_date: Some("2026-01-01".into()),
             dl_count: Some(100),
             rating: Some(4.5),
             tags: vec!["耳かき".into()],
+            vas: vec!["声优A".into()],
         }
     }
 
@@ -1102,7 +1119,7 @@ mod tests {
         assert_eq!(items[1].work_id, None);
         assert_eq!(items[1].download_status, None);
         assert_eq!(items[2].rank, 2, "并列名次应保留");
-        assert_eq!(items[0].tags, vec!["掏耳".to_string()], "读取时日文标签应翻译为中文");
+        assert_eq!(items[0].tags, vec!["耳かき".to_string()], "标签应原样保留");
 
         // limit 生效 + 全量替换不残留旧行
         assert_eq!(list_rankings(&conn, "day", 2).unwrap().len(), 2);

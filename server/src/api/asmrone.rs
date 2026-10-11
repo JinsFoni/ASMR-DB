@@ -627,7 +627,7 @@ fn map_work(work: &serde_json::Value, rj: &str) -> ScrapedWork {
     };
     w.title_ja = get_str(work, &["title"]);
     w.sale_date = get_str(work, &["release", "release_date", "saleDate"]);
-    w.price = get_i64(work, &["price"]);
+    w.dl_count = get_i64(work, &["dl_count"]);
     w.description = get_str(work, &["description"]);
     // asmr.one API 的封面字段为 mainCoverUrl（samCoverUrl 为缩略图）
     if let Some(c) = get(work, &["cover", "cover_url", "image", "mainCoverUrl"]) {
@@ -646,9 +646,11 @@ fn map_work(work: &serde_json::Value, rj: &str) -> ScrapedWork {
             });
     }
     w.actors = names_from_objects(work, &["vas", "voice_actors", "actors", "voiceActors"]);
-    // 标签日文名经映射表翻译为简中，表外原样保留
-    w.tags = names_from_objects(work, &["tags"]);
-    w.tags = crate::api::tagmap::zh_all(&w.tags);
+    // 全库作品即 ASMR，单标的「ASMR」无信息量，屏蔽
+    w.tags = names_from_objects(work, &["tags"])
+        .into_iter()
+        .filter(|t| t != "ASMR")
+        .collect();
     if let Some(sec) = get_i64(work, &["duration"]) {
         if sec >= 60 {
             w.duration_min = Some(sec / 60);

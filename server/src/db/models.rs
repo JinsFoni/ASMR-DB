@@ -12,7 +12,12 @@ pub struct Work {
     pub circle_id: Option<String>,
     pub cover_url: Option<String>,
     pub work_type: String,
-    pub price: Option<i64>,
+    /// 销售量（DLsite 販売数 / asmr.one dl_count）
+    pub dl_count: Option<i64>,
+    /// 收藏数（DLsite wishlist_count）
+    pub wishlist_count: Option<i64>,
+    /// 评分（DLsite rate_average_2dp / asmr.one rate_average_2dp）
+    pub rating: Option<f64>,
     pub sale_date: Option<String>,
     pub description: Option<String>,
     pub age_class: Option<String>,
@@ -119,7 +124,12 @@ pub struct ScrapedWork {
     pub circle_id: Option<String>,
     pub cover_url: Option<String>,
     pub work_type: String,
-    pub price: Option<i64>,
+    /// 销售量（DLsite 販売数 / asmr.one dl_count）
+    pub dl_count: Option<i64>,
+    /// 收藏数（DLsite wishlist_count）
+    pub wishlist_count: Option<i64>,
+    /// 评分（DLsite rate_average_2dp）
+    pub rating: Option<f64>,
     pub sale_date: Option<String>,
     pub description: Option<String>,
     pub age_class: Option<String>,
@@ -152,16 +162,18 @@ pub struct TranslationTask {
 
 /// DLsite 排行榜单条（抓取结果，入库前）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct RankingEntry {    pub rank: i64,
+pub struct RankingEntry {
+    pub rank: i64,
     pub rj_code: String,
     pub title: Option<String>,
     pub circle_name: Option<String>,
     pub cover_url: Option<String>,
-    pub price: Option<i64>,
     pub sale_date: Option<String>,
     pub dl_count: Option<i64>,
     pub rating: Option<f64>,
     pub tags: Vec<String>,
+    /// 声优列表（榜单页 span.author，轮播展示用）
+    pub vas: Vec<String>,
 }
 
 /// DLsite 排行榜条目 + 本地作品关联（榜单卡片用）
@@ -172,11 +184,12 @@ pub struct DlsiteRankingItem {
     pub title: Option<String>,
     pub circle_name: Option<String>,
     pub cover_url: Option<String>,
-    pub price: Option<i64>,
     pub sale_date: Option<String>,
     pub dl_count: Option<i64>,
     pub rating: Option<f64>,
     pub tags: Vec<String>,
+    /// 声优列表（榜单页解析，轮播展示用）
+    pub vas: Vec<String>,
     /// 已入库作品的本地 id；未入库为 None
     pub work_id: Option<i64>,
     /// 已入库时的下载状态；未入库为 None

@@ -10,8 +10,11 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 pub const RANKING_TERMS: [&str; 5] = ["day", "week", "month", "year", "total"];
 
 /// DLsite 音声作品（ボイス・ASMR）排行榜页面 URL，每个周期固定返回 Top 100。
+/// locale=zh_CN：榜单页返回简体中文标签（治愈/低语…），无需本地映射表。
 pub fn ranking_url(term: &str) -> String {
-    format!("https://www.dlsite.com/maniax/ranking/{term}?category=voice")
+    format!(
+        "https://www.dlsite.com/maniax/ranking/{term}?category=voice&locale=zh_CN"
+    )
 }
 
 /// DLsite 作品信息接口（批量，返回 rate_average_2dp 等作品页同源数据）。
@@ -88,11 +91,39 @@ fn apply_ratings(json_text: &str, entries: &mut [RankingEntry]) {
     }
 }
 
+/// 按 RJ 号从 DLsite 作品信息接口取精确评分（rate_average_2dp，与作品页同源）。
+/// 供详情页在 asmr.one 无评分时补齐；接口失败或无评分返回 None。
+pub fn fetch_rating(rj: &str, proxy: &ProxyConfig) -> Option<f64> {
+    let rj = rj.trim().to_uppercase();
+    let client = crate::api::http_client::shared_blocking_client("ranking-dlsite", proxy, || {
+        let builder = reqwest::blocking::Client::builder()
+            .user_agent(USER_AGENT)
+            .timeout(std::time::Duration::from_secs(15));
+        proxy
+            .apply_blocking(builder, ProxyTarget::Dlsite)
+            .build()
+            .map_err(|e| format!("构建请求客户端失败: {e}"))
+    })
+    .ok()?;
+    let resp = client
+        .get(PRODUCT_INFO_URL)
+        .query(&[("product_id", &rj)])
+        .send()
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let json: serde_json::Value = resp.json().ok()?;
+    json.get(&rj)
+        .and_then(|v| v.get("rate_average_2dp"))
+        .and_then(|x| x.as_f64())
+}
+
 /// 解析排行榜页面 HTML。
 ///
 /// 页面结构：`<table id="ranking_table">` 内每个 `<tr>` 为一个作品——
 /// 排名在 `td .rank_no`，作品链接 `dt.work_name a`，社团 `dd.maker_name > a`，
-/// 价格 `dd.work_price_wrap .work_price`，封面完整大图藏在缩略图 Vue 组件的
+/// 封面完整大图藏在缩略图 Vue 组件的
 /// `:src` 属性里（`is_show ? '//img.dlsite.jp/modpub/...' : ...`），
 /// 发售日 / 贩売数 / 评分在 `td.work_1col_right ul.work_info_box`，标签在 `dd.search_tag`。
 pub fn parse_ranking(html: &str) -> Vec<RankingEntry> {
@@ -133,10 +164,6 @@ fn parse_row(tr: &ElementRef, fallback_rank: i64) -> Option<RankingEntry> {
         .map(|e| e.text().collect::<String>().trim().to_string())
         .filter(|t| !t.is_empty());
 
-    // --- 价格（含折扣价的当前售价） ---
-    let price = text_of(tr, "dd.work_price_wrap .work_price").and_then(|t| digits_of(&t));
-    let price = price.and_then(|d| d.parse::<i64>().ok());
-
     // --- 发售日（去掉「販売日:」标签前缀，否则标签里的“日”字会干扰日期解析） ---
     let sale_date = text_of(tr, "li.sales_date").and_then(|t| {
         let tail = t.rsplit_once(':').map(|(_, tail)| tail).unwrap_or(&t);
@@ -159,8 +186,8 @@ fn parse_row(tr: &ElementRef, fallback_rank: i64) -> Option<RankingEntry> {
         })
         .map(|v| v / 10.0);
 
-    // --- 标签（日文标签经映射表翻译为简中，表外原样保留） ---
-    let tags = Selector::parse("dd.search_tag a")
+    // --- 声优（dd.maker_name 内 span.author 的链接文本，与社团名分开） ---
+    let vas = Selector::parse("dd.maker_name span.author a")
         .map(|sel| {
             tr.select(&sel)
                 .map(|e| e.text().collect::<String>().trim().to_string())
@@ -168,7 +195,16 @@ fn parse_row(tr: &ElementRef, fallback_rank: i64) -> Option<RankingEntry> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let tags = crate::api::tagmap::zh_all(&tags);
+
+    // --- 标签（zh_CN 榜单页直接返回简体中文标签；全库作品即 ASMR，单标的「ASMR」屏蔽） ---
+    let tags = Selector::parse("dd.search_tag a")
+        .map(|sel| {
+            tr.select(&sel)
+                .map(|e| e.text().collect::<String>().trim().to_string())
+                .filter(|t| !t.is_empty() && t != "ASMR")
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     // --- 封面大图（hover 弹出层里的完整主图） ---
     let cover_url = cover_of(tr);
@@ -179,11 +215,11 @@ fn parse_row(tr: &ElementRef, fallback_rank: i64) -> Option<RankingEntry> {
         title,
         circle_name,
         cover_url,
-        price,
         sale_date,
         dl_count,
         rating,
         tags,
+        vas,
     })
 }
 
@@ -284,10 +320,6 @@ mod tests {
                 <span class="separator">/</span>
                 <span class="author"><a href="#x">大山チロル</a>&nbsp;<a href="#y">陽向葵ゅか</a></span>
               </dd>
-              <dd class="work_price_wrap">
-                <span class="work_price discount">2,640<i>円</i></span>
-                <span class="strike">3,300<i>円</i></span>
-              </dd>
               <dd class="search_tag">
                 <a href="#g46">ハーレム</a>
                 <a href="#g04">ラブラブ/あまあま</a>
@@ -341,7 +373,6 @@ mod tests {
         assert_eq!(first.rj_code, "RJ01675713");
         assert_eq!(first.title.as_deref(), Some("作品タイトルA"));
         assert_eq!(first.circle_name.as_deref(), Some("マヨタマ"));
-        assert_eq!(first.price, Some(2640));
         assert_eq!(first.sale_date.as_deref(), Some("2026-09-13"));
         assert_eq!(first.dl_count, Some(3032));
         assert_eq!(first.rating, Some(4.5));
@@ -349,18 +380,20 @@ mod tests {
             first.cover_url.as_deref(),
             Some("https://img.dlsite.jp/modpub/images2/work/doujin/RJ01676000/RJ01675713_img_main.jpg")
         );
-        // 标签经映射表翻译为简中（ハーレム→后宫，ラブラブ/あまあま→亲热/甜蜜）
-        assert_eq!(first.tags, vec!["后宫", "亲热/甜蜜"]);
+        // 标签原样保留（zh_CN 页返回简中标签；测试样例仍用日文占位）
+        assert_eq!(first.tags, vec!["ハーレム", "ラブラブ/あまあま"]);
+        // 声优来自 dd.maker_name 内 span.author 的链接文本
+        assert_eq!(first.vas, vec!["大山チロル", "陽向葵ゅか"]);
 
         // 缺省字段的行：字段为 None，不 panic
         let second = &items[1];
         assert_eq!(second.rank, 2);
         assert_eq!(second.rj_code, "RJ01683949");
         assert_eq!(second.circle_name.as_deref(), Some("サークルB"));
-        assert_eq!(second.price, None);
         assert_eq!(second.rating, None);
         assert_eq!(second.cover_url, None);
         assert!(second.tags.is_empty());
+        assert!(second.vas.is_empty());
 
         // DLsite 榜单存在并列名次（如三作品并列第 N），rank 可重复
         let third = &items[2];
@@ -383,11 +416,11 @@ mod tests {
                 title: None,
                 circle_name: None,
                 cover_url: None,
-                price: None,
                 sale_date: None,
                 dl_count: None,
                 rating: Some(5.0),
                 tags: vec![],
+                vas: vec![],
             },
             RankingEntry {
                 rank: 2,
@@ -395,11 +428,11 @@ mod tests {
                 title: None,
                 circle_name: None,
                 cover_url: None,
-                price: None,
                 sale_date: None,
                 dl_count: None,
                 rating: Some(4.5),
                 tags: vec![],
+                vas: vec![],
             },
             // 接口未返回的作品保留榜单页的 0.5 精度值
             RankingEntry {
@@ -408,11 +441,11 @@ mod tests {
                 title: None,
                 circle_name: None,
                 cover_url: None,
-                price: None,
                 sale_date: None,
                 dl_count: None,
                 rating: Some(4.0),
                 tags: vec![],
+                vas: vec![],
             },
         ];
         apply_ratings(json, &mut entries);

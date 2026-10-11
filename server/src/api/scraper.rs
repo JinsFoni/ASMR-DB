@@ -9,7 +9,11 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 pub fn product_url(rj_code: &str) -> String {
     // RJ* → maniax (R18), non-RJ and BJ* → maniax as well; home is all-ages
     let rj = rj_code.trim().to_uppercase();
-    format!("https://www.dlsite.com/maniax/work/=/product_id/{}.html", rj)
+    // locale=zh_CN：作品页返回简体中文标签（治愈/低语…），表格标题同为中文（发售日/分类…）
+    format!(
+        "https://www.dlsite.com/maniax/work/=/product_id/{}.html?locale=zh_CN",
+        rj
+    )
 }
 
 /// 仅抓取 DLsite 作品页的完整「作品内容」简介（HTML 转纯文本，保留换行）。
@@ -50,6 +54,14 @@ pub fn fetch_work_description(rj_code: &str, proxy: &ProxyConfig) -> Result<Stri
     let mut text = String::new();
     if let Some(container) = doc.select(&container_sel).next() {
         for p in container.select(&p_sel) {
+            // zh_CN 页容器尾部会混入包着页面脚本/模板的 <p>（DataDog 注入、Vue 组件等），
+            // 含 script/style 的段落整段跳过
+            if Selector::parse("script, style")
+                .map(|s| p.select(&s).next().is_some())
+                .unwrap_or(false)
+            {
+                continue;
+            }
             // 用 inner_html 按 <br> 拆行后剥离标签，保留原文换行结构
             let inner = p.inner_html();
             let html_line = inner
@@ -59,6 +71,11 @@ pub fn fetch_work_description(rj_code: &str, proxy: &ProxyConfig) -> Result<Stri
             let line = strip_tags(&html_line);
             // 元素间换行数（<br> 可能连续出现多个），压掉段首尾空白
             let line = line.trim();
+            // 正文段落不会出现的 JS 代码特征，或超长行（页面脚本文本）→ 丢弃
+            let looks_like_code = line.contains("function(") || line.contains("$(function") || line.contains("var ");
+            if looks_like_code || line.chars().count() > 2000 {
+                continue;
+            }
             let br_count = p.select(&br_sel).count();
             if !line.is_empty() {
                 if !text.is_empty() {
@@ -158,8 +175,11 @@ pub fn fetch_work_metadata(rj_code: &str, proxy: &ProxyConfig) -> Result<Scraped
     w.cover_url = meta_content(&doc, "og:image");
 
     // --- Description ---
+    // og:description 是「简介前半句 + 站点广告」拼接（…立即欣赏！每天都有新作品上架…），
+    // 把广告段剥掉，只留作品自身的简介
     w.description = meta_content(&doc, "og:description")
-        .or_else(|| meta_content(&doc, "description"));
+        .or_else(|| meta_content(&doc, "description"))
+        .map(|d| strip_site_ad(&d));
 
     // --- Circle name / id ---
     if let Some(circle) = find_circle(&doc) {
@@ -170,15 +190,39 @@ pub fn fetch_work_metadata(rj_code: &str, proxy: &ProxyConfig) -> Result<Scraped
     // --- Table-driven fields: 販売日 / 年齢指定 / 声優 / ジャンル / ファイル容量 / 作品形式 / ファイルサイズ ---
     parse_info_table(&doc, &mut w);
 
-    // --- Price ---
-    if let Some(p) = find_price(&doc) {
-        w.price = Some(p);
+    // --- 售出 / 收藏 / 评分：作品页的 DL 数和评分是 Vue 异步渲染抓不到，走作品信息接口 ---
+    fetch_work_counts(&client, &rj, &mut w);
+
+    // --- 评分兜底：翻译作品（?translation=）的评分聚合在原版作品上，信息接口对翻译版返回空，
+    //     但作品页 HTML 里的 schema.org aggregateRating 微数据始终带聚合后的评分 ---
+    if w.rating.is_none() {
+        w.rating = meta_itemprop_content(&doc, "ratingValue").and_then(|s| s.parse::<f64>().ok());
     }
 
     // --- Multi-language titles ---
     parse_localized_titles(&doc, &mut w);
 
     Ok(w)
+}
+
+/// 从 product/info/ajax 拉取售出数（dl_count）、收藏数（wishlist_count）与精确评分（rate_average_2dp）。
+/// 接口失败时保留 None，不影响主流程。
+fn fetch_work_counts(client: &reqwest::blocking::Client, rj: &str, w: &mut ScrapedWork) {
+    const PRODUCT_INFO_URL: &str = "https://www.dlsite.com/maniax/product/info/ajax";
+    let Ok(resp) = client.get(PRODUCT_INFO_URL).query(&[("product_id", rj)]).send() else {
+        return;
+    };
+    if !resp.status().is_success() {
+        return;
+    }
+    let Ok(json) = resp.json::<serde_json::Value>() else {
+        return;
+    };
+    if let Some(v) = json.get(rj) {
+        w.dl_count = v.get("dl_count").and_then(|x| x.as_i64());
+        w.wishlist_count = v.get("wishlist_count").and_then(|x| x.as_i64());
+        w.rating = v.get("rate_average_2dp").and_then(|x| x.as_f64());
+    }
 }
 
 /// Parse `<meta property="og:xx" content="...">` or `<meta name="xx">`.
@@ -194,26 +238,64 @@ fn meta_content(doc: &Html, key: &str) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
+/// Parse `<meta itemprop="xx" content="...">`（schema.org 微数据，如 aggregateRating/ratingValue）。
+fn meta_itemprop_content(doc: &Html, key: &str) -> Option<String> {
+    let sel = Selector::parse(&format!("meta[itemprop=\"{}\"]", key)).ok()?;
+    doc.select(&sel)
+        .filter_map(|e| e.value().attr("content"))
+        .next()
+        .map(|s| s.trim().to_string())
+}
+
 fn page_title(doc: &Html) -> Option<String> {
     let sel = Selector::parse("title").ok()?;
     doc.select(&sel).next().map(|e| e.text().collect::<String>())
 }
 
+/// 剥离 og:description 尾部拼接的 DLsite 站点广告段。
+/// 简中版形如「…委ねよう！「DLsite 同人 - R18」是同人志・…下载商城「DLsite」！」，
+/// 日文版形如「…ダウンロードショップ。お気に入りの作品を…」。
+fn strip_site_ad(d: &str) -> String {
+    let markers = [
+        // 简中版：广告以「DLsite 同人」起头
+        "「DLsite 同人 - R18」是同人志",
+        "「DLsite 同人」是同人志",
+        // 日文版：广告以「同人誌・同人ゲーム…」起头，前面是句号或引号闭合
+        "同人誌・同人ゲーム・同人ボイス・ASMRのダウンロードショップ",
+    ];
+    let mut out = d.trim().to_string();
+    for m in markers {
+        if let Some(i) = out.find(m) {
+            out.truncate(i);
+            break;
+        }
+    }
+    out.trim_end_matches(['、', '。', '！', '~', '」', ' ', '\n'])
+        .to_string()
+}
+
 /// Strip trailing " - DLsite ..." / " - DLsiteR18..." from a title.
 fn clean_title(t: &str) -> String {
-    let t = t.trim();
-    for marker in [
-        "〜DLsite",
-        "～DLsite",
-        " - DLsiteR18",
-        " - DLsite R18",
-        " - DLsite",
-        " -DLsite",
-        " | DLsite",
-        " - DLsite FANZA",
-    ] {
+    let mut t = t.trim();
+    // 末尾站点尾缀：「… | DLsite」「… - DLsiteR18」等（og:title 新旧格式）
+    for marker in [" | DLsite", " - DLsiteR18", " - DLsite R18", " - DLsite", " -DLsite", " | DLsite FANZA"] {
+        if let Some(idx) = t.rfind(marker) {
+            // 只在末尾才算尾缀，避免误删正文中出现的同形文本
+            if idx + marker.len() == t.len() {
+                t = t[..idx].trim_end();
+            }
+        }
+    }
+    // 标题自带的品牌方括号后缀：「… [社团名/ DLsite]」（og:title 新格式）
+    if let Some(idx) = t.rfind(" [") {
+        if t.ends_with(']') && idx + 2 < t.len() {
+            t = t[..idx].trim_end();
+        }
+    }
+    // 旧格式波浪线后缀
+    for marker in ["〜DLsite", "～DLsite"] {
         if let Some(idx) = t.find(marker) {
-            return t[..idx].trim().to_string();
+            t = t[..idx].trim_end();
         }
     }
     t.to_string()
@@ -276,35 +358,48 @@ fn parse_info_table(doc: &Html, w: &mut ScrapedWork) {
             continue;
         }
 
+        // 表格标题随 locale 变化：日文（販売日/年齢指定…）与简体中文（发售日/年龄指定…）都接受
         match label {
-            l if l.contains("販売日") || l.contains("配信日") => {
+            l if l.contains("販売日") || l.contains("配信日") || l.contains("发售日") => {
                 w.sale_date = extract_date(&value);
             }
-            l if l.contains("年齢指定") => {
-                w.age_class = Some(if value.contains("18") {
-                    "r18".to_string()
-                } else if value.contains("R-18G") {
+            l if l.contains("年齢指定") || l.contains("年龄指定") => {
+                // 中文页年龄值是「全年龄 / R18 / R-18G」，日文页含「18」判定即可
+                w.age_class = Some(if value.contains("R-18G") || value.contains("R‐18G") {
                     "r18g".to_string()
+                } else if value.contains("18") {
+                    "r18".to_string()
                 } else {
                     "general".to_string()
                 });
             }
-            l if l.contains("声優") => {
+            l if l.contains("声優") || l.contains("声优") => {
                 w.actors = split_list(&value);
             }
-            l if l.contains("ジャンル") || l.contains("作品内容") => {
-                w.tags = split_list(&value);
+            l if l.contains("ジャンル")
+                || l.contains("作品内容")
+                || l.contains("分类")
+                || l.contains("分類") =>
+            {
+                // 全库作品即 ASMR，单标的「ASMR」无信息量，屏蔽
+                w.tags = split_list(&value)
+                    .into_iter()
+                    .filter(|t| t != "ASMR")
+                    .collect();
             }
-            l if l.contains("ファイル容量") || l.contains("ファイルサイズ") => {
+            l if l.contains("ファイル容量")
+                || l.contains("ファイルサイズ")
+                || l.contains("文件容量") =>
+            {
                 w.file_size_mb = parse_file_size(&value);
             }
-            l if l.contains("作品形式") || l.contains("ファイル形式") => {
+            l if l.contains("作品形式") || l.contains("ファイル形式") || l.contains("文件形式") => {
                 if w.duration_min.is_none() {
                     // 形式字段可能是 MP3/FLAC/WAV + 収録時間
                     w.duration_min = parse_duration_from_text(&value);
                 }
             }
-            l if l.contains("収録時間") => {
+            l if l.contains("収録時間") || l.contains("收录时间") || l.contains("收錄時間") => {
                 w.duration_min = parse_duration_from_text(&value);
             }
             _ => {}
@@ -409,52 +504,30 @@ fn parse_duration_from_text(s: &str) -> Option<i64> {
     None
 }
 
-fn find_price(doc: &Html) -> Option<i64> {
-    // 现代页面价格由 Vue 渲染（静态 HTML 无价格文本），
-    // 优先取隐藏 GA4 埋点元素上的 data-price（当前折扣价）。
-    if let Ok(sel) = Selector::parse("div[data-price]") {
-        for e in doc.select(&sel) {
-            if let Some(v) = e.value().attr("data-price") {
-                if let Ok(p) = v.trim().parse::<i64>() {
-                    return Some(p);
-                }
-            }
-        }
-    }
-    let price_sel = Selector::parse(
-        ".work_price, .buy_price, #price_box .price, span[itemprop='price'], .price-whole",
-    )
-    .ok()?;
-    for e in doc.select(&price_sel) {
-        let text = e.text().collect::<String>();
-        let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
-        if !digits.is_empty() {
-            return digits.parse::<i64>().ok();
-        }
-    }
-    None
-}
-
 /// Localized titles live in hidden language-switch spans like `<span class="work-title-zh">` or
 /// `<p class="title_en">`. Best-effort extraction.
 fn parse_localized_titles(doc: &Html, w: &mut ScrapedWork) {
+    // 注意不能裸用 [lang='zh-CN']：zh_CN 页的 <html lang="zh-CN"> 会整体命中，
+    // 其 text() 是全文档文本（含 <script>），数万字符垃圾会被写进 title_zh。
+    // 只匹配行内元素，html/body 这类容器级 lang 排除在外。
     let zh_sel = Selector::parse(
-        ".work-title-zh, [lang='zh-CN'], .work_title_zh, #work_name_zh",
+        "span[lang='zh-CN'], p[lang='zh-CN'], div[lang='zh-CN'], .work-title-zh, .work_title_zh, #work_name_zh",
     )
     .ok();
     if let Some(sel) = zh_sel {
         if let Some(e) = doc.select(&sel).next() {
             let t = e.text().collect::<String>().trim().to_string();
-            if !t.is_empty() {
+            // 标题长度保险：正常作品标题不会超过 200 字符，超长必是误抓的容器文本
+            if !t.is_empty() && t.chars().count() <= 200 {
                 w.title_zh = Some(t);
             }
         }
     }
-    let en_sel = Selector::parse(".work-title-en, [lang='en'], #work_name_en").ok();
+    let en_sel = Selector::parse("span[lang='en'], p[lang='en'], .work-title-en, #work_name_en").ok();
     if let Some(sel) = en_sel {
         if let Some(e) = doc.select(&sel).next() {
             let t = e.text().collect::<String>().trim().to_string();
-            if !t.is_empty() {
+            if !t.is_empty() && t.chars().count() <= 200 {
                 w.title_en = Some(t);
             }
         }
@@ -498,22 +571,15 @@ mod tests {
           <tr><th>声優</th><td>佐倉綾音 日笠陽子</td></tr>
         </table>
       </div>
-      <div class="work_price"><span>1,320</span></div>
     </body>
     </html>
     "#;
 
-    /// 真实页面结构：`<table id="work_outline">` 本身即表格（tr 直接在其下），
-    /// 价格由 Vue 渲染，仅 GA4 埋点元素上有 data-price。
+    /// 真实页面结构：`<table id="work_outline">` 本身即表格（tr 直接在其下）。
     const SAMPLE_HTML_V2: &str = r##"
     <html>
     <head><title>【15%OFF】テスト作品 [サークルX] | DLsite 同人 - R18</title></head>
     <body>
-      <div data-vue-component="product-price" data-section_name="right_work_price">
-        <div hidden class="ga4_event_item_RJ01690344" data-product_id="RJ01690344"
-             data-price="1309" data-official_price="1540"></div>
-        <div id="work_price"></div>
-      </div>
       <table cellspacing="0" id="work_outline">
         <tr><th>販売日</th><td><a href="#">2026年09月11日 0時</a></td></tr>
         <tr><th>声優</th><td><a href="#">都みみち</a> / <a href="#">ありのりあ</a></td></tr>
@@ -537,7 +603,6 @@ mod tests {
         assert_eq!(w.age_class.as_deref(), Some("r18"));
         assert!(w.actors.iter().any(|a| a.contains("都みみち")));
         assert!(w.tags.iter().any(|t| t.contains("耳かき")));
-        assert_eq!(find_price(&doc), Some(1309), "应从 GA4 data-price 取到折扣价");
     }
 
     #[test]
