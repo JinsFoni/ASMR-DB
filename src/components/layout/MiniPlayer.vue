@@ -55,7 +55,7 @@ function cycleLoop() {
     v-if="player.visible && route.name !== 'player'"
     class="player-dock glass"
   >
-    <!-- 曲目 -->
+    <!-- 封面 + 播放控制 -->
     <div class="np">
       <div class="np-art overflow-hidden">
         <img
@@ -66,16 +66,6 @@ function cycleLoop() {
         />
         <ImageOff v-else :size="18" class="text-white/60" />
       </div>
-      <div class="min-w-0">
-        <p class="np-title">{{ player.currentTrack?.title || "未播放" }}</p>
-        <p class="np-sub ellipsis-1">
-          {{ player.work?.work.title_zh || player.work?.work.title_ja || player.work?.work.rj_code || "" }}
-        </p>
-      </div>
-    </div>
-
-    <!-- 控制 + 进度 -->
-    <div class="pcenter">
       <div class="pctrls">
         <button class="pctrl" title="上一首" @click="player.prev()">
           <SkipBack :size="17" />
@@ -89,6 +79,10 @@ function cycleLoop() {
           <SkipForward :size="17" />
         </button>
       </div>
+    </div>
+
+    <!-- 进度 -->
+    <div class="pcenter">
       <div class="pprog">
         <time>{{ fmt(player.currentTime) }}</time>
         <div class="pbar" @click="onSeekClick">
@@ -192,24 +186,11 @@ html[data-theme="sakura"] .player-dock {
   display: grid;
   place-items: center;
 }
-.np-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.np-sub {
-  font-size: 11.5px;
-  color: var(--label-2);
-  margin-top: 1px;
-}
 
 .pcenter {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
+  justify-content: center;
 }
 .pctrls {
   display: flex;
