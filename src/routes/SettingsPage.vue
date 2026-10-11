@@ -43,6 +43,58 @@ const llmPrompt = ref("");
 const llmSaved = ref(false);
 const llmSaving = ref(false);
 
+// 图片磁盘缓存
+const imgCacheMaxMb = ref(512);
+const imgCacheTtlHours = ref(168);
+const imgCacheSaved = ref(false);
+const imgCacheSaving = ref(false);
+const imgCacheStats = ref<{ count: number; bytes: number } | null>(null);
+const imgCacheClearing = ref(false);
+
+function fmtBytes(n: number) {
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${n} B`;
+}
+
+async function refreshImgCacheStats() {
+  try {
+    imgCacheStats.value = await api.getImageCacheStats();
+  } catch (_) {
+    imgCacheStats.value = null;
+  }
+}
+
+async function saveImageCache() {
+  imgCacheSaving.value = true;
+  try {
+    await api.setSettings(undefined, undefined, undefined, undefined, undefined, {
+      maxMb: Math.max(0, Number(imgCacheMaxMb.value) || 0),
+      ttlHours: Math.max(1, Number(imgCacheTtlHours.value) || 168),
+    });
+    imgCacheSaved.value = true;
+    setTimeout(() => (imgCacheSaved.value = false), 1500);
+    await refreshImgCacheStats();
+  } catch (e) {
+    alert(`保存失败：${e}`);
+  } finally {
+    imgCacheSaving.value = false;
+  }
+}
+
+async function clearImgCache() {
+  if (!confirm("确定清空全部缓存图片？清空后浏览时将重新从网络加载。")) return;
+  imgCacheClearing.value = true;
+  try {
+    await api.clearImageCache();
+    await refreshImgCacheStats();
+  } catch (e) {
+    alert(`清空失败：${e}`);
+  } finally {
+    imgCacheClearing.value = false;
+  }
+}
+
 // asmr.one 站点配置（地址 / 账号 / 密码，登录成功后 Token 自动保存）
 const asmrAddress = ref("");
 const asmrUsername = ref("");
@@ -84,6 +136,9 @@ onMounted(async () => {
   llmThreads.value = s.llm_threads;
   llmAuto.value = s.llm_auto;
   llmPrompt.value = s.llm_prompt || "";
+  imgCacheMaxMb.value = s.image_cache_max_mb;
+  imgCacheTtlHours.value = s.image_cache_ttl_hours;
+  refreshImgCacheStats();
 });
 
 function selectTheme(t: ThemeName) {
@@ -344,6 +399,38 @@ function handleDirPicked(dir: string) {
         <button class="btn primary" :disabled="llmSaving" @click="saveLlm">
           <Check v-if="llmSaved" :size="13" style="color: #c9f2d4" />
           保存配置
+        </button>
+      </div>
+    </section>
+
+    <!-- 图片缓存 -->
+    <section class="card set-card">
+      <h2>🖼️ 图片缓存</h2>
+      <p class="desc">
+        在线作品 / 排行榜的封面图经本服务代理并缓存到磁盘（数据库同级的 image_cache 目录），
+        重复浏览不再回源外网。上限填 0 表示关闭缓存（图片直接实时加载）。
+      </p>
+      <div class="grid2">
+        <div class="set-row tight">
+          <span class="k">缓存上限 (MB)</span>
+          <div class="field"><input v-model.number="imgCacheMaxMb" type="number" min="0" max="65536" /></div>
+        </div>
+        <div class="set-row tight">
+          <span class="k">过期时间 (小时)</span>
+          <div class="field"><input v-model.number="imgCacheTtlHours" type="number" min="1" max="8760" /></div>
+        </div>
+      </div>
+      <div class="save-bar" style="margin-top: 20px">
+        <span class="hint">
+          {{ imgCacheStats ? `已缓存 ${imgCacheStats.count} 张 · ${fmtBytes(imgCacheStats.bytes)}` : "统计加载中..." }}
+        </span>
+        <button class="btn" :disabled="imgCacheClearing || !imgCacheStats?.count" @click="clearImgCache">
+          <Loader2 v-if="imgCacheClearing" :size="13" class="animate-spin" />
+          清空缓存
+        </button>
+        <button class="btn primary" :disabled="imgCacheSaving" @click="saveImageCache">
+          <Check v-if="imgCacheSaved" :size="13" style="color: #c9f2d4" />
+          保存
         </button>
       </div>
     </section>

@@ -18,6 +18,7 @@ import {
   ImageOff,
 } from "lucide-vue-next";
 import { usePlayerStore } from "../stores/player";
+import { imgUrl } from "../lib/api";
 
 const router = useRouter();
 const player = usePlayerStore();
@@ -25,7 +26,7 @@ const player = usePlayerStore();
 const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const showSpeeds = ref(false);
 
-const coverUrl = computed(() => player.work?.work.cover_url || "");
+const coverUrl = computed(() => imgUrl(player.work?.work.cover_url) || "");
 const trackTitle = computed(() => player.currentTrack?.title || "");
 const workTitle = computed(
   () => player.work?.work.title_zh || player.work?.work.title_ja || player.work?.work.rj_code || ""

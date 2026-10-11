@@ -271,6 +271,20 @@ export function isOnlineTrack(filePath: string): boolean {
   return /^https?:\/\//i.test(filePath) || filePath.startsWith("/api/");
 }
 
+// ---------- 图片缓存代理 ----------
+
+/**
+ * 远端图片的缓存代理 URL（服务端落盘缓存，大小/过期在设置页配置）。
+ * 相对路径（/api/...）与本地文件不受影响，直接原样返回。
+ */
+export function imgUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  if (/^https?:\/\//i.test(url)) {
+    return `/api/img?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 // ---------- Import ----------
 
 export function importByRj(
@@ -380,6 +394,8 @@ export function getSettings(): Promise<{
   llm_threads: number;
   llm_auto: boolean;
   llm_prompt: string | null;
+  image_cache_max_mb: number;
+  image_cache_ttl_hours: number;
 }> {
   // 设置页与本站各处（如在线音轨探测）都频繁读取，实际极少变化 → 短 TTL 缓存
   return cached("settings", () => get("/api/settings"));
@@ -413,7 +429,8 @@ export function setSettings(
     threads?: number;
     auto?: boolean;
     prompt?: string;
-  }
+  },
+  imageCache?: { maxMb?: number; ttlHours?: number }
 ): Promise<void> {
   return post<void>("/api/settings", {
     theme,
@@ -433,10 +450,22 @@ export function setSettings(
     llmThreads: llm?.threads,
     llmAuto: llm?.auto,
     llmPrompt: llm?.prompt,
+    imageCacheMaxMb: imageCache?.maxMb,
+    imageCacheTtlHours: imageCache?.ttlHours,
   }).then((r) => {
     invalidateSettingsCache();
     return r;
   });
+}
+
+/** 图片缓存统计（条目数与总字节）。 */
+export function getImageCacheStats(): Promise<{ count: number; bytes: number }> {
+  return get("/api/settings/image-cache");
+}
+
+/** 清空图片缓存，返回删除条数。 */
+export function clearImageCache(): Promise<{ removed: number }> {
+  return post("/api/settings/image-cache/clear", {});
 }
 
 // ---------- LLM 翻译 ----------

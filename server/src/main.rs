@@ -263,6 +263,8 @@ async fn main() {
         .route("/api/asmr/tracks", get(handlers::works::list_asmrone_tracks))
         .route("/api/asmr/tree", get(handlers::works::list_asmrone_tree))
         .route("/api/asmr/file/{*hash}", get(handlers::media::asmr_file))
+        // ============ 图片缓存代理 ============
+        .route("/api/img", get(handlers::media::img_proxy))
         // ============ 下载 ============
         .route("/api/download", post(handlers::download::download_work))
         .route("/api/download/asmr", post(handlers::download::download_asmr))
@@ -315,6 +317,14 @@ async fn main() {
         .route(
             "/api/settings/open-audio",
             post(handlers::settings::open_audio_file),
+        )
+        .route(
+            "/api/settings/image-cache",
+            get(handlers::settings::image_cache_stats),
+        )
+        .route(
+            "/api/settings/image-cache/clear",
+            post(handlers::settings::image_cache_clear),
         )
         // ============ 字幕 ============
         .route(

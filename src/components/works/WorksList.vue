@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { CheckCircle2, ImageOff } from "lucide-vue-next";
 import type { WorkView } from "../../lib/types";
+import { imgUrl } from "../../lib/api";
 import { useWorksStore } from "../../stores/works";
 
 const props = defineProps<{ works: WorkView[] }>();
@@ -67,7 +68,7 @@ const statusLabel = computed(() => (s: string) => {
           <td class="px-3 py-2">
             <RouterLink :to="`/work/${w.work.id}`">
               <div class="w-10 h-13 aspect-[3/4] rounded bg-bg-hover overflow-hidden">
-                <img v-if="w.work.cover_url" :src="w.work.cover_url" class="w-full h-full object-cover" loading="lazy" />
+                <img v-if="w.work.cover_url" :src="imgUrl(w.work.cover_url)" class="w-full h-full object-cover" loading="lazy" />
                 <div v-else class="w-full h-full flex items-center justify-center text-muted/40">
                   <ImageOff :size="14" />
                 </div>

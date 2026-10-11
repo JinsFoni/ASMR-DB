@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { Play, ImageOff } from "lucide-vue-next";
+import { imgUrl } from "../../lib/api";
 import * as api from "../../lib/api";
 import type { DlsiteRankingItem } from "../../lib/types";
 
@@ -62,11 +63,11 @@ onBeforeUnmount(stop);
         <div
           v-if="w.cover_url"
           class="slide-bg"
-          :style="{ backgroundImage: `url(${w.cover_url})` }"
+          :style="{ backgroundImage: `url(${imgUrl(w.cover_url)})` }"
         />
         <!-- 左侧内嵌封面：原始 4:3 圆角卡片 -->
         <div class="slide-pic">
-          <img v-if="w.cover_url" :src="w.cover_url" :alt="titleOf(w)" />
+          <img v-if="w.cover_url" :src="imgUrl(w.cover_url)" :alt="titleOf(w)" />
           <div v-else class="pic-fallback">
             <ImageOff :size="26" />
           </div>

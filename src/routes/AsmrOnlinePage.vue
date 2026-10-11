@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onActivated, nextTick } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { Loader2, ChevronLeft, ChevronRight, Heart, ListVideo, History } from "lucide-vue-next";
+import { imgUrl } from "../lib/api";
 import * as api from "../lib/api";
 import type { AsmrOnlineWork, AsmrPlaylist, AsmrWorksPage } from "../lib/types";
 import AsmrWorkCard from "../components/asmr/AsmrWorkCard.vue";
@@ -259,7 +260,7 @@ onActivated(() => {
       >
         <img
           v-if="p.main_cover_url"
-          :src="p.main_cover_url"
+          :src="imgUrl(p.main_cover_url)"
           class="w-14 h-14 rounded-xl object-cover shrink-0"
           style="background: var(--fill-1)"
         />

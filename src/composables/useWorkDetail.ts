@@ -1,5 +1,6 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from "vue";
 import { useRouter } from "vue-router";
+import { imgUrl } from "../lib/api";
 import * as api from "../lib/api";
 import type { AsmrDownloadFile, AsmrOnlineWork, AsmrTreeNode, ScrapedWork, Tag, Track, Work, WorkView } from "../lib/types";
 import {
@@ -145,7 +146,10 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     return ja && ja !== title.value ? ja : null;
   });
 
-  const coverUrl = computed<string | null>(() => rawWork.value?.cover_url ?? null);
+  const coverUrl = computed<string | null>(() => {
+    const u = rawWork.value?.cover_url ?? null;
+    return u ? imgUrl(u) : null;
+  });
 
   // 仅非作品库页的已入库作品，角标才可点击跳本地详情（作品库页自身即本地详情）
   const statusBadge = computed<StatusBadge>(() =>

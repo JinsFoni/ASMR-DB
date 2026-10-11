@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { Check, ImageOff, Loader2 } from "lucide-vue-next";
+import { imgUrl } from "../../lib/api";
 import type { WorkView } from "../../lib/types";
 
 const props = defineProps<{
@@ -33,6 +34,7 @@ const circle = computed(() => props.view.work.circle_name || "");
 const actorsText = computed(() => props.view.actors.join(" / "));
 
 const dateText = computed(() => props.view.work.sale_date || "");
+const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
 </script>
 
 <template>
@@ -45,8 +47,8 @@ const dateText = computed(() => props.view.work.sale_date || "");
     <!-- 封面（海报模式高度由 WorksCover 注入的 --poster-img-h 控制，与横版卡片严格等高） -->
     <div class="cover" :class="wide ? '' : 'poster'">
       <img
-        v-if="view.work.cover_url"
-        :src="view.work.cover_url"
+        v-if="coverSrc"
+        :src="coverSrc"
         :alt="title"
         loading="lazy"
       />

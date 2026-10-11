@@ -39,6 +39,10 @@ pub struct SettingsResponse {
     pub llm_threads: i64,
     pub llm_auto: bool,
     pub llm_prompt: Option<String>,
+    /// 图片磁盘缓存上限（MB，0 = 关闭）
+    pub image_cache_max_mb: u64,
+    /// 图片缓存过期时间（小时）
+    pub image_cache_ttl_hours: u64,
 }
 
 pub async fn get_settings(
@@ -94,6 +98,16 @@ pub async fn get_settings(
                 .flatten()
                 .is_some_and(|v| v == "1"),
             llm_prompt: queries::get_setting(&conn, "llm_prompt").ok().flatten(),
+            image_cache_max_mb: queries::get_setting(&conn, "image_cache_max_mb")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(512),
+            image_cache_ttl_hours: queries::get_setting(&conn, "image_cache_ttl_hours")
+                .ok()
+                .flatten()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(168),
         })
     })
     .await
@@ -121,6 +135,8 @@ pub struct SetSettingsBody {
     pub llm_threads: Option<i64>,
     pub llm_auto: Option<bool>,
     pub llm_prompt: Option<String>,
+    pub image_cache_max_mb: Option<u64>,
+    pub image_cache_ttl_hours: Option<u64>,
 }
 
 pub async fn set_settings(
@@ -184,6 +200,14 @@ pub async fn set_settings(
         }
         if let Some(v) = body.llm_prompt {
             queries::set_setting(&conn, "llm_prompt", v.trim()).map_err(AppError::new)?;
+        }
+        if let Some(v) = body.image_cache_max_mb {
+            queries::set_setting(&conn, "image_cache_max_mb", &v.clamp(0, 64 * 1024).to_string())
+                .map_err(AppError::new)?;
+        }
+        if let Some(v) = body.image_cache_ttl_hours {
+            queries::set_setting(&conn, "image_cache_ttl_hours", &v.clamp(1, 24 * 365).to_string())
+                .map_err(AppError::new)?;
         }
         Ok(())
     })
@@ -464,6 +488,31 @@ fn spawn_reveal(path: &Path) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+// ============================= 图片缓存管理 =============================
+
+/// GET /api/settings/image-cache — 缓存统计（条目数与字节数）。
+pub async fn image_cache_stats(
+    State(state): State<SharedState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let dir = crate::api::img_cache::cache_dir(&state.db_path);
+    let (count, bytes) = tokio::task::spawn_blocking(move || crate::api::img_cache::stats(&dir))
+        .await
+        .map_err(AppError::new)?;
+    Ok(Json(json!({ "count": count, "bytes": bytes })))
+}
+
+/// POST /api/settings/image-cache/clear — 清空全部缓存图片，返回删除条数。
+pub async fn image_cache_clear(
+    State(state): State<SharedState>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let dir = crate::api::img_cache::cache_dir(&state.db_path);
+    let n = tokio::task::spawn_blocking(move || crate::api::img_cache::clear(&dir))
+        .await
+        .map_err(AppError::new)?
+        .map_err(AppError::new)?;
+    Ok(Json(json!({ "removed": n })))
 }
 
 // ============================= 字幕查找 / 拉取 =============================

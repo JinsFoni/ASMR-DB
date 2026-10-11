@@ -159,6 +159,8 @@ export interface AsmrOnlineWork {
   duration_sec: number | null;
   vas: string[];
   tags: string[];
+  /** 是否带字幕文件（asmr.one has_subtitle，卡片封面角标用） */
+  has_subtitle?: boolean;
   description: string | null;
   /** 本地作品 id（播放历史等本站数据直接关联本地） */
   local_work_id: number | null;

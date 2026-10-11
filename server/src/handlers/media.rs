@@ -213,3 +213,144 @@ pub async fn asmr_file(
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
+
+// ============================= 图片缓存代理 =============================
+
+#[derive(serde::Deserialize)]
+pub struct ImgQuery {
+    pub url: String,
+}
+
+/// GET /api/img?url=... — 远端图片代理：结果落盘缓存（大小/TTL 由设置表控制）。
+/// 前端封面统一走该端点，重复浏览不再重复回源外网。
+pub async fn img_proxy(State(state): State<SharedState>, Query(q): Query<ImgQuery>) -> Response {
+    let url = q.url.trim().to_string();
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return (StatusCode::BAD_REQUEST, "bad image url").into_response();
+    }
+    if url.contains("localhost") || url.contains("127.0.0.1") {
+        // 防止把本机服务当图源（SSRF 面）
+        return (StatusCode::BAD_REQUEST, "bad image url").into_response();
+    }
+
+    // 设置项 + 缓存目录（spawn_blocking：DB 池与文件 IO 都不能占 async 线程）
+    let state2 = state.clone();
+    let lookup_url = url.clone();
+    let (cache_cfg, cached) =
+        tokio::task::spawn_blocking(move || -> ((u64, std::time::Duration), Option<(Vec<u8>, String)>) {
+            let (max_mb, ttl) = match state2.db.get() {
+                Ok(conn) => crate::api::img_cache::config_from(&conn),
+                Err(_) => (0, std::time::Duration::from_secs(3600)),
+            };
+            let dir = crate::api::img_cache::cache_dir(&state2.db_path);
+            let hit = if max_mb == 0 {
+                None
+            } else {
+                crate::api::img_cache::get(&dir, &lookup_url, ttl)
+            };
+            ((max_mb, ttl), hit)
+        })
+        .await
+        .unwrap_or(((0, std::time::Duration::from_secs(3600)), None));
+
+    let (max_mb, ttl) = cache_cfg;
+    if let Some((bytes, mime)) = cached {
+        return (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, mime),
+                (header::CACHE_CONTROL, "max-age=3600".to_string()),
+            ],
+            Body::from(bytes),
+        )
+            .into_response();
+    }
+    if max_mb == 0 {
+        // 缓存关闭：直接回源，不落盘
+        return match fetch_remote_image(&url, &state).await {
+            Ok((bytes, mime)) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime)],
+                Body::from(bytes),
+            )
+                .into_response(),
+            Err(e) => (StatusCode::BAD_GATEWAY, e).into_response(),
+        };
+    }
+
+    // 回源并整体读入（封面几百 KB 量级，可接受；失败时无缓存直通）
+    let (bytes, mime) = match fetch_remote_image(&url, &state).await {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_GATEWAY, e).into_response(),
+    };
+    let dir = crate::api::img_cache::cache_dir(&state.db_path);
+    let store_url = url.clone();
+    let store_bytes = bytes.clone();
+    let store_mime = mime.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        crate::api::img_cache::put(&dir, &store_url, &store_bytes, &store_mime, max_mb, ttl);
+    })
+    .await;
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CACHE_CONTROL, "max-age=3600".to_string()),
+        ],
+        Body::from(bytes),
+    )
+        .into_response()
+}
+
+/// 拉取远端图片为字节（上限 16 MB，防御异常大文件）。
+async fn fetch_remote_image(url: &str, state: &SharedState) -> Result<(Vec<u8>, String), String> {
+    let proxy = {
+        let st = state.clone();
+        tokio::task::spawn_blocking(move || {
+            st.db.get().ok().map_or_else(Default::default, |conn| {
+                crate::api::proxy::ProxyConfig::from_conn(&conn)
+            })
+        })
+        .await
+        .unwrap_or_default()
+    };
+    let builder = reqwest::Client::builder()
+        .user_agent(crate::api::asmrone::USER_AGENT)
+        .timeout(Duration::from_secs(30));
+    // asmr.one 相关域名按 ASMR ONE 开关走代理，其余（DLsite CDN 等）按 DLsite 开关
+    let is_asmr = url.contains("asmr-100.com")
+        || url.contains("asmr-200.com")
+        || url.contains("asmr.one");
+    let builder = if is_asmr {
+        proxy.apply_async(builder, crate::api::proxy::ProxyTarget::AsmrOne)
+    } else {
+        proxy.apply_async(builder, crate::api::proxy::ProxyTarget::Dlsite)
+    };
+    let client = builder.build().map_err(|e| format!("构建请求客户端失败: {e}"))?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("拉取图片失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("拉取图片 HTTP 状态异常: {}", resp.status()));
+    }
+    let mime = resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| v.starts_with("image/"))
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let mut bytes = Vec::new();
+    let mut stream = resp.bytes_stream();
+    use futures::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("读取图片数据流失败: {e}"))?;
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() > 16 * 1024 * 1024 {
+            return Err("图片超过大小限制".to_string());
+        }
+    }
+    Ok((bytes, mime))
+}

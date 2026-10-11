@@ -10,6 +10,7 @@ import {
   XCircle,
   Download,
 } from "lucide-vue-next";
+import { imgUrl } from "../lib/api";
 import * as api from "../lib/api";
 import type { ScrapedWork, ScannedItem } from "../lib/types";
 import FolderPickerModal from "../components/common/FolderPickerModal.vue";
@@ -234,7 +235,7 @@ async function importAll() {
         <!-- 预览卡片 -->
         <div v-if="preview" class="card preview animate-fade-in">
           <div class="pv-cov">
-            <img v-if="preview.cover_url" :src="preview.cover_url" />
+            <img v-if="preview.cover_url" :src="imgUrl(preview.cover_url)" />
           </div>
           <div class="min-w-0">
             <h3>{{ preview.title_zh || preview.title_ja }}</h3>
