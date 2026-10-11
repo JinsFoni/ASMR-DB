@@ -10,7 +10,12 @@ export interface Work {
   circle_id: string | null;
   cover_url: string | null;
   work_type: string;
-  price: number | null;
+  /** 销售量（DLsite 販売数 / asmr.one dl_count） */
+  dl_count: number | null;
+  /** 收藏数（DLsite wishlist_count） */
+  wishlist_count: number | null;
+  /** 评分（DLsite rate_average_2dp） */
+  rating: number | null;
   sale_date: string | null;
   description: string | null;
   age_class: string | null;
@@ -82,7 +87,12 @@ export interface ScrapedWork {
   circle_id: string | null;
   cover_url: string | null;
   work_type: string;
-  price: number | null;
+  /** 销售量（DLsite 作品信息接口 dl_count） */
+  dl_count: number | null;
+  /** 收藏数（DLsite 作品信息接口 wishlist_count） */
+  wishlist_count: number | null;
+  /** 评分（DLsite 作品信息接口 rate_average_2dp） */
+  rating: number | null;
   sale_date: string | null;
   description: string | null;
   age_class: string | null;
@@ -128,11 +138,12 @@ export interface DlsiteRankingItem {
   title: string | null;
   circle_name: string | null;
   cover_url: string | null;
-  price: number | null;
   sale_date: string | null;
   dl_count: number | null;
   rating: number | null;
   tags: string[];
+  /** 声优列表（榜单页解析，轮播展示用） */
+  vas: string[];
   /** 已入库作品的本地 id；未入库为 null */
   work_id: number | null;
   /** 已入库时的下载状态；未入库为 null */
@@ -153,12 +164,15 @@ export interface AsmrOnlineWork {
   cover_url: string | null;
   release: string | null;
   dl_count: number | null;
-  price: number | null;
+  /** 收藏数（asmr.one 无此字段，由 DLsite 统一预览接口后台补齐） */
+  wishlist_count: number | null;
   rating: number | null;
   rate_count: number | null;
   duration_sec: number | null;
   vas: string[];
   tags: string[];
+  /// 年龄指定（r18g / r18 / general）
+  age_class: string | null;
   /** 是否带字幕文件（asmr.one has_subtitle，卡片封面角标用） */
   has_subtitle?: boolean;
   description: string | null;

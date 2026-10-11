@@ -6,6 +6,7 @@ import {
   actionLabel,
   actionVariant,
   resolveStatusBadge,
+  resolveAgeBadge,
   tagsFromNames,
   type ActionKey,
   type ActionInput,
@@ -282,4 +283,22 @@ test("badge: 未入库 → 未入库（黄），不可点击（避免死链接�
     tone: "yellow",
     clickable: false,
   });
+});
+// ============ 年龄指定角标 ============
+test("age: r18g → R-18G", () => {
+  assert.equal(resolveAgeBadge("r18g"), "R-18G");
+});
+
+test("age: r18 → R18", () => {
+  assert.equal(resolveAgeBadge("r18"), "R18");
+});
+
+test("age: general → 全年龄", () => {
+  assert.equal(resolveAgeBadge("general"), "全年龄");
+});
+
+test("age: 未知或缺失 → null（不渲染角标）", () => {
+  assert.equal(resolveAgeBadge(null), null);
+  assert.equal(resolveAgeBadge(undefined), null);
+  assert.equal(resolveAgeBadge("unknown"), null);
 });

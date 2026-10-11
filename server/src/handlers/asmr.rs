@@ -45,6 +45,14 @@ where
 }
 
 /// 为在线条目标注本地已入库作品 id（按 RJ 号匹配，供前端显示已入库标识与跳转）。
+/// dlsite latest 等其他在线列表也复用。
+pub async fn annotate_local_pub(
+    state: &SharedState,
+    items: Vec<AsmrOnlineWork>,
+) -> Result<Vec<AsmrOnlineWork>, AppError> {
+    annotate_local(state, items).await
+}
+
 async fn annotate_local(
     state: &SharedState,
     mut items: Vec<AsmrOnlineWork>,
@@ -196,10 +204,10 @@ fn work_to_online(w: Work) -> AsmrOnlineWork {
         cover_url: w.cover_url.clone(),
         release: w.sale_date.clone(),
         dl_count: None,
-        price: w.price,
-        rating: None,
+        rating: w.rating,
         rate_count: None,
         duration_sec: w.duration_min.map(|m| m * 60),
+        age_class: w.age_class,
         vas: Vec::new(),
         tags: Vec::new(),
         has_subtitle: false,

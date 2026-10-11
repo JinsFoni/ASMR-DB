@@ -10,6 +10,7 @@ import {
   buildMeta,
   buildWorkView,
   resolveActions,
+  resolveAgeBadge,
   resolveMode,
   resolveStatusBadge,
   tagsFromNames,
@@ -39,6 +40,8 @@ export interface UseWorkDetail {
   rjCode: ComputedRef<string | null>;
   coverUrl: ComputedRef<string | null>;
   statusBadge: ComputedRef<StatusBadge>;
+  /** 年龄指定角标文案（R-18G / R18 / 全年龄），缺失时 null */
+  ageBadge: ComputedRef<string | null>;
   meta: ComputedRef<MetaItem[]>;
   actors: ComputedRef<string[]>;
   tags: ComputedRef<Tag[]>;
@@ -88,6 +91,8 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
   const scrapedWork = ref<ScrapedWork | null>(null);
   const dlsiteDescription = ref("");
   const descriptionLoading = ref(false);
+  /** asmr.one 无评分时从 DLsite 作品信息接口后台补齐的评分 */
+  const dlsiteRating = ref<number | null>(null);
 
   const hasOnline = ref(false);
   const localTracks = ref<Track[]>([]);
@@ -132,9 +137,10 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     () =>
       localView.value?.work.title_zh ||
       localView.value?.work.title_ja ||
-      asmrWork.value?.title ||
+      // 在线页元数据统一从 DLsite 获取：DLsite 标题优先（asmr.one 标题带 RJ 前缀噪音）
       scrapedWork.value?.title_zh ||
       scrapedWork.value?.title_ja ||
+      asmrWork.value?.title ||
       rjCode.value ||
       `#${opts.id.value}`
   );
@@ -160,14 +166,25 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     )
   );
 
-  const meta = computed<MetaItem[]>(() =>
-    rawWork.value
-      ? buildMeta(opts.source, rawWork.value, asmrWork.value?.rating, asmrWork.value?.rate_count)
-      : []
-  );
+  /** 年龄指定角标：入库标识之后展示（R-18G / R18 / 全年龄） */
+  const ageBadge = computed<string | null>(() => resolveAgeBadge(rawWork.value?.age_class));
+
+  const meta = computed<MetaItem[]>(() => {
+    const w = rawWork.value;
+    if (!w) return [];
+    // 本地/来源无评分时，用后台从 DLsite 补齐的评分兜底
+    if (w.rating == null && dlsiteRating.value != null) {
+      return buildMeta(opts.source, { ...w, rating: dlsiteRating.value });
+    }
+    return buildMeta(opts.source, w);
+  });
 
   const actors = computed<string[]>(
-    () => localView.value?.actors ?? asmrWork.value?.vas ?? scrapedWork.value?.actors ?? []
+    () =>
+      localView.value?.actors ??
+      // 统一元数据：DLsite 声优优先，asmr.one 兜底
+      (scrapedWork.value?.actors.length ? scrapedWork.value.actors : asmrWork.value?.vas) ??
+      []
   );
 
   /**
@@ -176,7 +193,13 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
    */
   const tags = computed<Tag[]>(() => {
     if (localView.value) return localView.value.tags;
-    if (opts.source === "asmr") return tagsFromNames(asmrWork.value?.tags ?? []);
+    if (opts.source === "asmr") {
+      // 统一元数据：DLsite 标签优先，asmr.one 兜底
+      const names = scrapedWork.value?.tags.length
+        ? scrapedWork.value.tags
+        : asmrWork.value?.tags ?? [];
+      return tagsFromNames(names);
+    }
     if (opts.source === "dlsite") return tagsFromNames(scrapedWork.value?.tags ?? []);
     return [];
   });
@@ -189,7 +212,8 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     if (opts.source === "work") {
       return localView.value?.work.description_zh ?? localView.value?.work.description ?? null;
     }
-    return asmrWork.value?.description ?? scrapedWork.value?.description ?? dlsiteDescription.value ?? null;
+    // 在线页统一元数据：DLsite 简介优先，asmr.one 兜底
+    return scrapedWork.value?.description ?? asmrWork.value?.description ?? dlsiteDescription.value ?? null;
   });
 
   const descriptionNote = computed<string | null>(() => {
@@ -197,7 +221,10 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
       return localView.value?.work.description_zh ? "中文翻译" : null;
     }
     if (opts.source === "asmr") {
-      return !asmrWork.value?.description && dlsiteDescription.value ? "（来自 DLsite）" : null;
+      // 简介既非 DLsite 统一抓取、也非 asmr.one 自带时，才标注来源
+      return !scrapedWork.value?.description && !asmrWork.value?.description && dlsiteDescription.value
+        ? "（来自 DLsite）"
+        : null;
     }
     return null;
   });
@@ -295,6 +322,7 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     asmrWork.value = null;
     scrapedWork.value = null;
     dlsiteDescription.value = "";
+    dlsiteRating.value = null;
     localTracks.value = [];
     onlineTracks.value = [];
     fileTree.value = null;
@@ -339,7 +367,11 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
 
     if (seq !== loadSeq || error.value) return;
     // ── 次要数据后台补齐：绝不阻塞标题/封面/按钮的首屏渲染 ──
-    if (opts.source === "asmr") loadDlsiteDescription(seq);
+    if (opts.source === "asmr") {
+      loadDlsiteDescription(seq);
+      // 元数据统一从 DLsite 获取：asmr.one 首屏先渲染，DLsite 字段后台合并
+      loadDlsiteMeta(seq);
+    }
     loadSecondary(seq).catch(() => {});
   }
 
@@ -350,6 +382,15 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
   async function loadSecondary(seq: number) {
     const rj = rjCode.value;
     if (!rj) return;
+    // 作品无评分时，用 RJ 号从 DLsite 作品信息接口后台补齐（不阻塞首屏）
+    if (rawWork.value?.rating == null) {
+      api
+        .getDlsiteRating(rj)
+        .then((r) => {
+          if (seq === loadSeq) dlsiteRating.value = r;
+        })
+        .catch(() => {});
+    }
     // 作品库本地已有音轨：音轨区立即可用，无需 loading 占位
     // （但仍需探测在线音轨，用于「在线播放 / ASMR One下载」按钮显隐）
     const localReady = opts.source === "work" && localTracks.value.length > 0;
@@ -385,6 +426,23 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
         tracksLoading.value = false;
         treeLoading.value = false;
       }
+    }
+  }
+
+  /**
+   * ASMR ONE 页统一元数据：后台从 DLsite 抓取（与 DLsite 详情页共用同一份
+   * 服务端短 TTL 缓存），写入 scrapedWork 供 buildFakeWork 以 DLsite 字段优先合并。
+   * asmr.one 数据兜底并保留在线特有字段（时长、音轨）。
+   */
+  async function loadDlsiteMeta(seq: number) {
+    const rj = asmrWork.value?.rj_code;
+    if (!rj) return;
+    try {
+      const meta = await api.previewByRj(rj, "dlsite");
+      if (seq !== loadSeq) return;
+      scrapedWork.value = meta;
+    } catch {
+      // DLsite 抓取失败时保持 asmr.one 自身数据展示，静默降级
     }
   }
 
@@ -634,6 +692,7 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     rjCode,
     coverUrl,
     statusBadge,
+    ageBadge,
     meta,
     actors,
     tags,

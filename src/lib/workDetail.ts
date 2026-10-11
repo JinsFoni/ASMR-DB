@@ -136,26 +136,21 @@ export function actionVariant(key: ActionKey, index: number): ActionVariant {
   return "outline";
 }
 
-/** 元数据行（spec §4 三个页面的元数据逐字一致，仅 rating 为 ASMR ONE 独有） */
-export function buildMeta(
-  _source: DetailSource,
-  w: Work,
-  rating?: number | null,
-  rateCount?: number | null
-): MetaItem[] {
+/**
+ * 元数据方格（详情页两列布局，按行优先顺序）：
+ * 第一行 售出/收藏，第二行 发售/评分，第三行 社团/声优（声优由详情页追加）。
+ * 旧字段（价格/时长/容量）不再进方格。
+ */
+export function buildMeta(_source: DetailSource, w: Work): MetaItem[] {
   const items: MetaItem[] = [];
-  if (w.circle_name) items.push({ icon: "🏢", text: `社团：${w.circle_name}` });
+  if (w.dl_count != null) items.push({ icon: "📦", text: `售出：${w.dl_count.toLocaleString()}` });
+  if (w.wishlist_count != null) items.push({ icon: "❤️", text: `收藏：${w.wishlist_count.toLocaleString()}` });
   if (w.sale_date) items.push({ icon: "📅", text: `发售：${String(w.sale_date).slice(0, 10)}` });
-  if (rating != null && rating > 0) {
-    items.push({
-      icon: "⭐",
-      text: rateCount ? `${rating.toFixed(1)}（${rateCount} 人评价）` : rating.toFixed(1),
-    });
+  if (w.rating != null && w.rating > 0) {
+    // 直接输出原值（如 4.73），不用 toFixed 避免 4.84 → 4.8 的精度丢失
+    items.push({ icon: "⭐", text: `评分：${w.rating}` });
   }
-  if (w.price) items.push({ icon: "💰", text: `${w.price.toLocaleString()}円` });
-  if (w.duration_min) items.push({ icon: "⏱", text: `${w.duration_min}分` });
-  if (w.file_size_mb) items.push({ icon: "📦", text: `${w.file_size_mb.toFixed(1)}MB` });
-  if (w.age_class) items.push({ icon: "", text: w.age_class.toUpperCase() });
+  if (w.circle_name) items.push({ icon: "🏢", text: `社团：${w.circle_name}` });
   return items;
 }
 
@@ -180,6 +175,23 @@ export function resolveStatusBadge(
     return { text: "下载中", tone: "accent", clickable: canClick };
   }
   return { text: "未下载", tone: "neutral", clickable: canClick };
+}
+
+/**
+ * 年龄指定角标（详情页 RJ 号行，紧跟入库标识之后）。
+ * r18g → R-18G，r18 → R18，general → 全年龄，未知/缺失 → 不显示。
+ */
+export function resolveAgeBadge(ageClass: string | null | undefined): string | null {
+  switch (ageClass) {
+    case "r18g":
+      return "R-18G";
+    case "r18":
+      return "R18";
+    case "general":
+      return "全年龄";
+    default:
+      return null;
+  }
 }
 
 /**
@@ -219,7 +231,11 @@ export function tagsFromNames(names: string[]): Tag[] {
   }));
 }
 
-/** 由 ASMR ONE / DLsite 数据构造临时 Work（id 为 0 表示未入库） */
+/**
+ * 由 ASMR ONE / DLsite 数据构造临时 Work（id 为 0 表示未入库）。
+ * 元数据统一以 DLsite 抓取结果（s）优先；asmr.one（a）只兜底
+ * 并提供在线特有字段（时长、日文原标题）。
+ */
 export function buildFakeWork(
   source: DetailSource,
   id: string | number,
@@ -230,18 +246,20 @@ export function buildFakeWork(
   return {
     id: 0,
     rj_code: rj,
-    title_ja: a?.title ?? s?.title_ja ?? null,
+    title_ja: s?.title_ja ?? a?.title ?? null,
     title_zh: s?.title_zh ?? null,
     title_en: s?.title_en ?? null,
-    circle_name: a?.circle_name ?? s?.circle_name ?? null,
+    circle_name: s?.circle_name ?? a?.circle_name ?? null,
     circle_id: s?.circle_id ?? null,
-    cover_url: a?.cover_url ?? s?.cover_url ?? null,
+    cover_url: s?.cover_url ?? a?.cover_url ?? null,
     work_type: s?.work_type ?? "voice",
-    price: a?.price ?? s?.price ?? null,
-    sale_date: a?.release ?? s?.sale_date ?? null,
-    description: a?.description ?? s?.description ?? null,
+    dl_count: s?.dl_count ?? a?.dl_count ?? null,
+    wishlist_count: s?.wishlist_count ?? null,
+    rating: s?.rating ?? a?.rating ?? null,
+    sale_date: s?.sale_date ?? a?.release ?? null,
+    description: s?.description ?? a?.description ?? null,
     description_zh: source === "asmr" ? (a?.description ?? null) : null,
-    age_class: s?.age_class ?? null,
+    age_class: s?.age_class ?? a?.age_class ?? null,
     duration_min: a?.duration_sec ? Math.round(a.duration_sec / 60) : (s?.duration_min ?? null),
     file_size_mb: s?.file_size_mb ?? null,
     dlsite_url: s?.dlsite_url ?? `https://www.dlsite.com/maniax/work/=/product_id/${rj}.html`,

@@ -550,6 +550,14 @@ export function asmrWorkDetail(id: number | string): Promise<AsmrOnlineWork> {
   return cached(`ext:asmr-work:${id}`, () => get(`/api/asmr/work/${id}`));
 }
 
+// ---------- DLsite 最新作品 ----------
+
+/** DLsite 音声作品列表（fsr 搜索页，条目结构与在线页一致）。
+ *  order：release 最新 / trend 人气 / dl_d 销量 / rate_d 评分 / review_d 赏析 */
+export function dlsiteLatest(page: number, order = "release"): Promise<AsmrWorksPage> {
+  return get(`/api/dlsite/latest${qs({ page, order })}`);
+}
+
 // ---------- DLsite 排行榜 ----------
 
 /** term: day | week | month | year | total；limit: 20/50/100 */
