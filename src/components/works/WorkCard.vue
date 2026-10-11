@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import { Check, ImageOff, Loader2 } from "lucide-vue-next";
+import { Check, ImageOff, Loader2, Star } from "lucide-vue-next";
 import { imgUrl } from "../../lib/api";
 import type { WorkView } from "../../lib/types";
 
@@ -30,10 +30,11 @@ const downloading = computed(() => props.view.download_status === "downloading")
 const title = computed(
   () => props.view.work.title_zh || props.view.work.title_ja || props.view.work.rj_code
 );
-const circle = computed(() => props.view.work.circle_name || "");
 const actorsText = computed(() => props.view.actors.join(" / "));
-
 const dateText = computed(() => props.view.work.sale_date || "");
+const wishlistText = computed(() =>
+  props.view.work.wishlist_count != null ? props.view.work.wishlist_count.toLocaleString() : ""
+);
 const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
 </script>
 
@@ -73,6 +74,11 @@ const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
       >
         <Loader2 :size="10" class="animate-spin" /> 下载中
       </span>
+
+      <!-- 评分角标（封面右下角，与榜单卡片金色星标同风格） -->
+      <span v-if="view.work.rating != null && !selectMode" class="rating-badge">
+        <Star :size="10" class="rating-star" /> {{ view.work.rating }}
+      </span>
     </div>
 
     <!-- 信息 -->
@@ -81,9 +87,9 @@ const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
       <span class="font-mono">{{ view.work.rj_code }}</span>
       <span v-if="actorsText" class="vas">{{ actorsText }}</span>
     </p>
-    <p v-if="dateText || circle" class="wmeta2">
+    <p v-if="dateText || wishlistText" class="wmeta2">
       <span class="font-mono">{{ dateText }}</span>
-      <span v-if="circle" class="circle">{{ circle }}</span>
+      <span v-if="wishlistText" class="wishlist" title="DLsite 收藏数">♥ {{ wishlistText }}</span>
     </p>
     <div v-if="view.tags.length" class="wtags">
       <span v-for="t in view.tags.slice(0, 3)" :key="t.id" class="wtag">{{ t.name }}</span>
@@ -159,6 +165,27 @@ const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
 .dl-badge-downloading {
   background: rgba(47, 143, 239, 0.92);
 }
+.rating-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  border-radius: 999px;
+  padding: 3px 8px;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.rating-star {
+  color: #ffd60a;
+  fill: #ffd60a;
+}
 h3 {
   font-size: 13.5px;
   font-weight: 600;
@@ -202,7 +229,7 @@ h3 {
   color: var(--label-3);
   margin-top: 1px;
 }
-.wmeta2 .circle {
+.wmeta2 .wishlist {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

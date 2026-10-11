@@ -77,10 +77,58 @@ function applyWorks(res: AsmrWorksPage | { type: "playlists"; playlists: AsmrPla
     playlists.value = res.playlists;
     items.value = [];
     hasNext.value = false;
-  } else {
-    items.value = res.items;
-    hasNext.value = res.hasNext;
-    playlists.value = null;
+      } else {
+        items.value = res.items;
+        hasNext.value = res.hasNext;
+        playlists.value = null;
+        // 传响应式代理（items.value）而非原始数组：直接改原始对象不会触发卡片重渲染
+        enrichMeta(items.value);
+      }
+}
+
+let enrichSeq = 0;
+/** 后台补齐卡片元数据（收藏数/评分/声优/发售日期/标签）：
+ *  已入库作品直接取本地库（无外网请求），未入库的走 DLsite 统一预览接口（服务端短 TTL 缓存）。 */
+async function enrichMeta(list: AsmrOnlineWork[]) {
+  const seq = ++enrichSeq;
+  // 本地库归一化成与 ScrapedWork 同形的补丁，两条路径共用一套合并逻辑
+  const byRj = new Map(
+    worksStore.works
+      .filter((v) => v.work.rj_code)
+      .map((v) => [
+        v.work.rj_code.toUpperCase(),
+        {
+          rating: v.work.rating,
+          wishlist_count: v.work.wishlist_count,
+          sale_date: v.work.sale_date,
+          actors: v.actors,
+        },
+      ])
+  );
+  for (const item of list) {
+    if (!item.rj_code) continue;
+    const rj = item.rj_code.toUpperCase();
+    try {
+      let meta = byRj.get(rj);
+      if (!meta) {
+        const s = await api.previewByRj(rj);
+        if (seq !== enrichSeq) return;
+        meta = {
+          rating: s.rating,
+          wishlist_count: s.wishlist_count,
+          sale_date: s.sale_date,
+          actors: s.actors,
+        };
+      }
+      if (seq !== enrichSeq) return;
+      if (meta.rating != null) item.rating = meta.rating;
+      if (meta.wishlist_count != null) item.wishlist_count = meta.wishlist_count;
+      if (meta.sale_date) item.release = meta.sale_date;
+      if (meta.actors.length) item.vas = meta.actors;
+      // 标签保留 asmr.one 原值（DLsite 的类型标签偏商城分类，卡片展示不友好）
+    } catch {
+      // 抓取失败（如 DLsite 下架）保持 asmr.one 原值，静默降级
+    }
   }
 }
 

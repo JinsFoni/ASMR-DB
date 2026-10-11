@@ -17,7 +17,6 @@ onMounted(() => {
 });
 
 async function deleteTag(tagId: number) {
-  if (!confirm("删除标签？(仅移除标签本身)")) return;
   await api.deleteTag(tagId);
   store.loadTags();
   if (store.tagId === tagId) {

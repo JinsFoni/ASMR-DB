@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BookmarkCheck, Captions, ImageOff, Loader2 } from "lucide-vue-next";
+import { BookmarkCheck, Captions, ImageOff, Loader2, Star } from "lucide-vue-next";
 import { imgUrl } from "../../lib/api";
 import type { AsmrOnlineWork } from "../../lib/types";
 
@@ -21,21 +21,12 @@ const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? 
 const coverSrc = computed(() => imgUrl(props.item.cover_url));
 const title = computed(() => props.item.title || props.item.rj_code || `#${props.item.id}`);
 
-const metaText = computed(() => {
-  if (props.item.rj_code) {
-    const parts = [props.item.rj_code];
-    if (props.item.circle_name) parts.push(props.item.circle_name);
-    return parts.join(" · ");
-  }
-  return "";
-});
-const meta2Text = computed(() => {
-  const parts: string[] = [];
-  if (props.item.release) parts.push(props.item.release.slice(0, 10));
-  if (props.item.duration_sec) parts.push(`${Math.round(props.item.duration_sec / 60)} 分钟`);
-  if (!parts.length && props.item.dl_count) parts.push(`販売 ${props.item.dl_count.toLocaleString()}`);
-  return parts.join(" · ");
-});
+/* 元数据结构与作品库卡片（WorkCard）一致：RJ 号+声优 / 发售日期+数量 */
+const actorsText = computed(() => props.item.vas.join(" / "));
+const dateText = computed(() => props.item.release?.slice(0, 10) || "");
+const wishlistText = computed(() =>
+  props.item.wishlist_count != null ? props.item.wishlist_count.toLocaleString() : ""
+);
 </script>
 
 <template>
@@ -62,11 +53,22 @@ const meta2Text = computed(() => {
 
       <!-- 已入库角标（设计稿 .corner） -->
       <span v-if="localId" class="corner"><BookmarkCheck :size="10" /> 已入库</span>
+
+      <!-- 评分角标（封面右下角，与作品库卡片同款） -->
+      <span v-if="item.rating != null" class="rating-badge">
+        <Star :size="10" class="rating-star" /> {{ item.rating }}
+      </span>
     </div>
 
     <h3 :title="title">{{ title }}</h3>
-    <p class="oc-meta">{{ metaText }}</p>
-    <p v-if="meta2Text" class="oc-meta2">{{ meta2Text }}</p>
+    <p class="oc-meta">
+      <span v-if="item.rj_code" class="font-mono">{{ item.rj_code }}</span>
+      <span v-if="actorsText" class="vas">{{ actorsText }}</span>
+    </p>
+    <p v-if="dateText || wishlistText" class="oc-meta2">
+      <span class="font-mono">{{ dateText }}</span>
+      <span v-if="wishlistText" class="wishlist" title="DLsite 收藏数">♥ {{ wishlistText }}</span>
+    </p>
     <div v-if="item.tags.length" class="oc-tags">
       <span v-for="t in item.tags.slice(0, 3)" :key="t" class="wtag">{{ t }}</span>
     </div>
@@ -161,17 +163,63 @@ const meta2Text = computed(() => {
   color: var(--blue-deep);
 }
 .oc-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11.5px;
   color: var(--label-2);
   margin-top: 4px;
-  white-space: nowrap;
+}
+.oc-meta .font-mono {
+  flex-shrink: 0;
+}
+.vas {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
 }
 .oc-meta2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11.5px;
   color: var(--label-3);
   margin-top: 1px;
+}
+.oc-meta2 .font-mono {
+  flex-shrink: 0;
+}
+.wishlist {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.rating-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  border-radius: 999px;
+  padding: 3px 8px;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.rating-star {
+  color: #ffd60a;
+  fill: #ffd60a;
 }
 .oc-tags {
   display: flex;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
-import { Play, ImageOff } from "lucide-vue-next";
+import { Play, ImageOff, Star } from "lucide-vue-next";
 import { imgUrl } from "../../lib/api";
 import * as api from "../../lib/api";
 import type { DlsiteRankingItem } from "../../lib/types";
@@ -78,9 +78,10 @@ onBeforeUnmount(stop);
             <span class="eyebrow">日榜 No.{{ w.rank }} · TOP CHART</span>
             <h2 :title="titleOf(w)">{{ titleOf(w) }}</h2>
             <p class="meta">
-              <template v-if="w.rating != null">★ {{ w.rating }} · </template>销售
-              {{ (w.dl_count ?? 0).toLocaleString() }}<template v-if="w.price">
-                · {{ w.price.toLocaleString() }} 円</template>
+              <span v-if="w.rating != null" class="meta-rating" title="DLsite 评分">
+                <Star :size="12" class="meta-star" /> {{ w.rating }} ·
+              </span>售出
+              <span class="meta-strong">{{ (w.dl_count ?? 0).toLocaleString() }}</span>
             </p>
             <div class="slide-info">
               <div class="info-item">
@@ -94,6 +95,10 @@ onBeforeUnmount(stop);
               <div v-if="w.circle_name" class="info-item">
                 <span class="info-k">社团</span>
                 <span class="info-v">{{ w.circle_name }}</span>
+              </div>
+              <div v-if="w.vas.length" class="info-item">
+                <span class="info-k">声优</span>
+                <span class="info-v">{{ w.vas.join(" / ") }}</span>
               </div>
               <div v-if="w.tags.length" class="slide-tags">
                 <span v-for="t in w.tags.slice(0, 4)" :key="t" class="tag">{{ t }}</span>
@@ -247,12 +252,36 @@ onBeforeUnmount(stop);
   opacity: 0.85;
   margin-top: 7px;
 }
+/* 评分段：金色实心星标，与榜单卡片 .rc-rating 同风格 */
+.meta-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  /* 评分片段自带「·」分隔符，与后续「销售」文字拉开固定间距 */
+  margin-right: 4px;
+  font-weight: 600;
+  color: #fff;
+  opacity: 1;
+  font-variant-numeric: tabular-nums;
+}
+.meta-star {
+  color: #ffd60a;
+  fill: #ffd60a;
+}
+/* 售出数字：与评分段同字重，纯白不透明 */
+.meta-strong {
+  font-weight: 600;
+  opacity: 1;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
 .slide .slide-info {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: auto auto;
+  /* 第一列（RJ / 社团）固定宽度，保证「发售」「声优」列始终垂直对齐 */
+  grid-template-columns: 170px auto;
   justify-content: start;
-  column-gap: 40px;
+  column-gap: 56px;
   row-gap: 5px;
 }
 .slide .info-item {

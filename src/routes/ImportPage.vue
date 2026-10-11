@@ -243,7 +243,6 @@ async function importAll() {
             <div class="pv-meta">
               <span v-if="preview.circle_name">🏢 {{ preview.circle_name }}</span>
               <span v-if="preview.sale_date">📅 {{ preview.sale_date }}</span>
-              <span v-if="preview.price">💰 {{ preview.price.toLocaleString() }} 円</span>
               <span v-if="preview.actors.length">🎤 {{ preview.actors.join(" / ") }}</span>
               <span v-if="preview.file_size_mb">📦 {{ preview.file_size_mb.toFixed(1) }} MB</span>
             </div>

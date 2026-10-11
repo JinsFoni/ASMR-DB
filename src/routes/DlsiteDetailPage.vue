@@ -18,6 +18,7 @@ const {
   rjCode,
   coverUrl,
   statusBadge,
+  ageBadge,
   meta,
   actors,
   tags,
@@ -66,6 +67,7 @@ function openDlsite() {
     :rj-code="rjCode"
     :cover-url="coverUrl"
     :status-badge="statusBadge"
+    :age-badge="ageBadge"
     :meta="meta"
     :actors="actors"
     :tags="tags"
