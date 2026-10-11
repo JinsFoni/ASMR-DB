@@ -6,3 +6,4 @@ pub mod llm;
 pub mod proxy;
 pub mod ranking;
 pub mod scraper;
+pub mod tagmap;

@@ -646,7 +646,9 @@ fn map_work(work: &serde_json::Value, rj: &str) -> ScrapedWork {
             });
     }
     w.actors = names_from_objects(work, &["vas", "voice_actors", "actors", "voiceActors"]);
+    // 标签日文名经映射表翻译为简中，表外原样保留
     w.tags = names_from_objects(work, &["tags"]);
+    w.tags = crate::api::tagmap::zh_all(&w.tags);
     if let Some(sec) = get_i64(work, &["duration"]) {
         if sec >= 60 {
             w.duration_min = Some(sec / 60);

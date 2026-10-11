@@ -110,15 +110,16 @@ fn parse_row(tr: &ElementRef, fallback_rank: i64) -> Option<RankingEntry> {
         })
         .map(|v| v / 10.0);
 
-    // --- 标签 ---
+    // --- 标签（日文标签经映射表翻译为简中，表外原样保留） ---
     let tags = Selector::parse("dd.search_tag a")
         .map(|sel| {
             tr.select(&sel)
                 .map(|e| e.text().collect::<String>().trim().to_string())
                 .filter(|t| !t.is_empty())
-                .collect()
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let tags = crate::api::tagmap::zh_all(&tags);
 
     // --- 封面大图（hover 弹出层里的完整主图） ---
     let cover_url = cover_of(tr);
@@ -299,7 +300,8 @@ mod tests {
             first.cover_url.as_deref(),
             Some("https://img.dlsite.jp/modpub/images2/work/doujin/RJ01676000/RJ01675713_img_main.jpg")
         );
-        assert_eq!(first.tags, vec!["ハーレム", "ラブラブ/あまあま"]);
+        // 标签经映射表翻译为简中（ハーレム→后宫，ラブラブ/あまあま→亲热/甜蜜）
+        assert_eq!(first.tags, vec!["后宫", "亲热/甜蜜"]);
 
         // 缺省字段的行：字段为 None，不 panic
         let second = &items[1];

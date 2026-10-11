@@ -371,7 +371,8 @@ pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>, rusqlite::Error> {
     let rows = stmt.query_map([], |row| {
         Ok(Tag {
             id: row.get("id")?,
-            name: row.get("name")?,
+            // 同 list_work_tags：旧数据的日文标签读取时兜底翻译
+            name: crate::api::tagmap::zh(&row.get::<_, String>("name")?).to_string(),
             color: row.get("color")?,
             is_preset: row.get::<_, i64>("is_preset")? != 0,
         })
@@ -419,7 +420,8 @@ fn list_work_tags(conn: &Connection, work_id: i64) -> Result<Vec<Tag>, rusqlite:
     let rows = stmt.query_map(params![work_id], |row| {
         Ok(Tag {
             id: row.get("id")?,
-            name: row.get("name")?,
+            // 库里存的可能是旧数据的日文标签，读取时经映射表兜底翻译
+            name: crate::api::tagmap::zh(&row.get::<_, String>("name")?).to_string(),
             color: row.get("color")?,
             is_preset: row.get::<_, i64>("is_preset")? != 0,
         })
@@ -875,8 +877,10 @@ pub fn list_rankings(
             sale_date: row.get(6)?,
             dl_count: row.get(7)?,
             rating: row.get(8)?,
+            // 读取时兜底翻译：旧抓取数据里存的日文标签也能显示为中文
             tags: tags_json
-                .and_then(|s| serde_json::from_str(&s).ok())
+                .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+                .map(|v| crate::api::tagmap::zh_all(&v))
                 .unwrap_or_default(),
             work_id,
             download_status: download_status.map(String::from),
@@ -1098,7 +1102,7 @@ mod tests {
         assert_eq!(items[1].work_id, None);
         assert_eq!(items[1].download_status, None);
         assert_eq!(items[2].rank, 2, "并列名次应保留");
-        assert_eq!(items[0].tags, vec!["耳かき".to_string()]);
+        assert_eq!(items[0].tags, vec!["掏耳".to_string()], "读取时日文标签应翻译为中文");
 
         // limit 生效 + 全量替换不残留旧行
         assert_eq!(list_rankings(&conn, "day", 2).unwrap().len(), 2);
