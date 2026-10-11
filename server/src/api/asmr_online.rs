@@ -32,6 +32,9 @@ pub struct AsmrOnlineWork {
     pub duration_sec: Option<i64>,
     pub vas: Vec<String>,
     pub tags: Vec<String>,
+    /// 是否带字幕文件（asmr.one has_subtitle，卡片封面角标用）
+    #[serde(default)]
+    pub has_subtitle: bool,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -148,6 +151,7 @@ fn parse_work(v: &Value) -> Option<AsmrOnlineWork> {
         duration_sec: v.get("duration").and_then(|x| x.as_i64()),
         vas: names("vas"),
         tags: names("tags"),
+        has_subtitle: v.get("has_subtitle").and_then(|x| x.as_bool()).unwrap_or(false),
         description: None,
         local_work_id: None,
     })

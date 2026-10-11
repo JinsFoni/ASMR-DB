@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BookmarkCheck, ImageOff, Loader2 } from "lucide-vue-next";
+import { BookmarkCheck, Captions, ImageOff, Loader2 } from "lucide-vue-next";
+import { imgUrl } from "../../lib/api";
 import type { AsmrOnlineWork } from "../../lib/types";
 
 const props = defineProps<{
@@ -17,6 +18,7 @@ const emit = defineEmits<{
 }>();
 
 const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? null);
+const coverSrc = computed(() => imgUrl(props.item.cover_url));
 const title = computed(() => props.item.title || props.item.rj_code || `#${props.item.id}`);
 
 const metaText = computed(() => {
@@ -44,14 +46,19 @@ const meta2Text = computed(() => {
     <!-- 封面（4:3 裁切，hover 缩放） -->
     <div class="oc-cover">
       <img
-        v-if="item.cover_url"
-        :src="item.cover_url"
+        v-if="coverSrc"
+        :src="coverSrc"
         :alt="title"
         loading="lazy"
       />
       <div v-else class="w-full h-full flex items-center justify-center" style="color: var(--label-3)">
         <ImageOff :size="28" />
       </div>
+
+      <!-- 字幕标识（封面左下角） -->
+      <span v-if="item.has_subtitle" class="sub-badge" title="该作品带字幕文件">
+        <Captions :size="11" /> 字幕
+      </span>
 
       <!-- 已入库角标（设计稿 .corner） -->
       <span v-if="localId" class="corner"><BookmarkCheck :size="10" /> 已入库</span>
@@ -121,6 +128,22 @@ const meta2Text = computed(() => {
   border-radius: 999px;
   padding: 3px 9px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+}
+.sub-badge {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(28, 28, 32, 0.72);
+  backdrop-filter: blur(6px);
+  border-radius: 999px;
+  padding: 3px 9px;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px rgba(255, 255, 255, 0.16);
 }
 .oc h3 {
   font-size: 13.5px;

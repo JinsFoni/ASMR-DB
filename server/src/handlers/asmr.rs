@@ -202,6 +202,7 @@ fn work_to_online(w: Work) -> AsmrOnlineWork {
         duration_sec: w.duration_min.map(|m| m * 60),
         vas: Vec::new(),
         tags: Vec::new(),
+        has_subtitle: false,
         description: None,
         local_work_id: Some(w.id),
     }
