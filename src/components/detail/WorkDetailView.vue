@@ -34,6 +34,8 @@ const props = defineProps<{
   rjCode?: string | null;
   coverUrl?: string | null;
   statusBadge?: StatusBadge | null;
+  /** 年龄指定角标（R-18G / R18 / 全年龄），缺失时不渲染 */
+  ageBadge?: string | null;
   meta: MetaItem[];
   actors: string[];
   tags: Tag[];
@@ -130,7 +132,6 @@ const metaCells = computed(() =>
       return { label, value: rest.join("：") };
     })
 );
-const ageTag = computed(() => props.meta.find((m) => !m.text.includes("："))?.text || null);
 
 /** 按设计稿：primary 主按钮 / 普通填充按钮 / ghost 描边 / danger 删除 */
 function actionClass(a: DetailAction) {
@@ -202,18 +203,17 @@ function actionClass(a: DetailAction) {
             <BookmarkCheck v-if="statusBadge.clickable" :size="10" />
             {{ statusBadge.text }}
           </span>
-          <span v-if="ageTag" class="r18-tag">{{ ageTag }}</span>
+          <span v-if="ageBadge" class="r18-tag">{{ ageBadge }}</span>
         </div>
 
-        <!-- 元数据格：社团 / 声优 / 发售日 / 价格 / 音轨 / 大小 -->
-        <div v-if="metaCells.length" class="meta-grid">
-          <div v-for="(c, i) in metaCells" :key="i" class="meta-cell">
-            <b>{{ c.label }}</b><span :title="c.value">{{ c.value }}</span>
+        <!-- 元数据方格：两列（售出/收藏、发售/评分、社团/声优） -->
+        <div v-if="metaCells.length || actors.length" class="meta-grid">
+          <div v-for="(c, i) in metaCells" :key="'m' + i" class="meta-cell">
+            <b>{{ c.label }}</b><span class="names" :title="c.value">{{ c.value }}</span>
           </div>
-        </div>
-
-        <div v-if="actors.length" class="actor-row">
-          <b>声优</b><span class="names">{{ actors.join(" / ") }}</span>
+          <div v-if="actors.length" class="meta-cell">
+            <b>声优</b><span class="names">{{ actors.join(" / ") }}</span>
+          </div>
         </div>
 
         <!-- 标签：作品库可编辑，在线只读 -->
@@ -423,56 +423,35 @@ function actionClass(a: DetailAction) {
   color: var(--label);
 }
 
+/* 元数据方格：两列，行优先（售出/收藏、发售/评分、社团/声优）
+   第一列 240px 固定：让第二列起点与上方年龄指定角标对齐 */
 .meta-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
   margin-top: 18px;
-}
-@media (max-width: 900px) {
-  .meta-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  column-gap: 28px;
+  row-gap: 9px;
+  max-width: 560px;
 }
 .meta-cell {
-  background: var(--bg-secondary);
-  border-radius: var(--r-md);
-  padding: 10px 14px;
-  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
-}
-.meta-cell b {
-  display: block;
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--label-3);
-  letter-spacing: 0.05em;
-}
-.meta-cell span {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--label);
-  margin-top: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.actor-row {
-  margin-top: 18px;
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 7px;
+  min-width: 0;
 }
-.actor-row b {
+.meta-cell b {
   font-size: 12px;
   color: var(--label-3);
   font-weight: 600;
   flex-shrink: 0;
 }
-.actor-row .names {
+.meta-cell .names {
   font-size: 13px;
-  color: var(--label-2);
+  font-weight: 600;
+  color: var(--label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tagrow {

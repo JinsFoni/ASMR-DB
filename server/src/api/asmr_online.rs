@@ -26,10 +26,12 @@ pub struct AsmrOnlineWork {
     pub cover_url: Option<String>,
     pub release: Option<String>,
     pub dl_count: Option<i64>,
-    pub price: Option<i64>,
     pub rating: Option<f64>,
     pub rate_count: Option<i64>,
     pub duration_sec: Option<i64>,
+    /// 年龄指定（r18g / r18 / general；asmr.one 仅能区分 r18 与 general）
+    #[serde(default)]
+    pub age_class: Option<String>,
     pub vas: Vec<String>,
     pub tags: Vec<String>,
     /// 是否带字幕文件（asmr.one has_subtitle，卡片封面角标用）
@@ -145,10 +147,20 @@ fn parse_work(v: &Value) -> Option<AsmrOnlineWork> {
             .map(String::from),
         release: v.get("release").and_then(|x| x.as_str()).map(String::from),
         dl_count: v.get("dl_count").and_then(|x| x.as_i64()),
-        price: v.get("price").and_then(|x| x.as_i64()),
         rating: v.get("rate_average_2dp").and_then(|x| x.as_f64()),
         rate_count: v.get("rate_count").and_then(|x| x.as_i64()),
         duration_sec: v.get("duration").and_then(|x| x.as_i64()),
+        // asmr.one 详情接口的年龄字段不统一（is_r18 / nsfw），两者任一为真即 r18
+        age_class: {
+            let r18 = ["is_r18", "nsfw"]
+                .iter()
+                .find_map(|k| v.get(*k).and_then(|x| x.as_bool()));
+            match r18 {
+                Some(true) => Some("r18".to_string()),
+                Some(false) => Some("general".to_string()),
+                None => None,
+            }
+        },
         vas: names("vas"),
         tags: names("tags"),
         has_subtitle: v.get("has_subtitle").and_then(|x| x.as_bool()).unwrap_or(false),
@@ -291,7 +303,6 @@ mod tests {
             "mainCoverUrl": "https://img.example/main.jpg",
             "release": "2026-09-10",
             "dl_count": 1234,
-            "price": 1320,
             "rate_average_2dp": 4.5,
             "rate_count": 67,
             "duration": 579,

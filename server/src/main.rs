@@ -4,7 +4,6 @@ mod handlers;
 mod state;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use axum::routing::{delete, get, post, put};
 use axum::Router;
@@ -224,6 +223,14 @@ async fn main() {
         .route(
             "/api/dlsite/description",
             get(handlers::dlsite::get_description),
+        )
+        .route(
+            "/api/dlsite/latest",
+            get(handlers::dlsite::get_latest),
+        )
+        .route(
+            "/api/dlsite/rating",
+            get(handlers::dlsite::get_rating),
         )
         // ============ LLM 翻译 ============
         .route(
