@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { CheckCircle2, ImageOff, Loader2 } from "lucide-vue-next";
+import { CheckCircle2, ImageOff, Loader2, Star } from "lucide-vue-next";
+import { imgUrl } from "../../lib/api";
 import type { DlsiteRankingItem } from "../../lib/types";
 
 const props = defineProps<{
@@ -31,6 +32,7 @@ const rankMeta = computed(() => {
 });
 
 const title = computed(() => props.item.title || props.item.rj_code);
+const coverSrc = computed(() => imgUrl(props.item.cover_url));
 </script>
 
 <template>
@@ -47,8 +49,8 @@ const title = computed(() => props.item.title || props.item.rj_code);
       <!-- 封面（固定宽，原始比例不裁切） -->
       <div class="rc-cover">
         <img
-          v-if="item.cover_url"
-          :src="item.cover_url"
+          v-if="coverSrc"
+          :src="coverSrc"
           :alt="title"
           loading="lazy"
         />
@@ -65,6 +67,10 @@ const title = computed(() => props.item.title || props.item.rj_code);
         <p v-if="item.circle_name" class="rc-meta">{{ item.circle_name }}</p>
         <p class="rc-meta2">
           <span class="font-mono">{{ item.rj_code }}</span>
+          <!-- DLsite 评分（作品页同源的 rate_average_2dp，如 4.7 / 4.84；无评分不显示） -->
+          <span v-if="item.rating != null" class="rc-rating" title="DLsite 评分">
+            <Star :size="11" class="rc-star" /> {{ item.rating }}
+          </span>
         </p>
       </div>
     </div>
@@ -201,6 +207,19 @@ const title = computed(() => props.item.title || props.item.rj_code);
   font-size: 11.5px;
   color: var(--label-3);
   margin-top: 3px;
+}
+.rc-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  color: var(--label-2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rc-star {
+  color: #ffd60a;
+  fill: #ffd60a;
 }
 
 .rc-side {

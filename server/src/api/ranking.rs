@@ -14,7 +14,13 @@ pub fn ranking_url(term: &str) -> String {
     format!("https://www.dlsite.com/maniax/ranking/{term}?category=voice")
 }
 
+/// DLsite 作品信息接口（批量，返回 rate_average_2dp 等作品页同源数据）。
+const PRODUCT_INFO_URL: &str = "https://www.dlsite.com/maniax/product/info/ajax";
+
 /// 抓取并解析指定周期的音声作品排行榜。
+///
+/// 榜单页评分只有 0.5 精度（`star_NN` 星级类），解析完后再批量调作品信息接口，
+/// 用与作品页显示一致的 `rate_average_2dp`（两位小数，如 4.7）覆盖。
 pub fn fetch_ranking(term: &str, proxy: &ProxyConfig) -> Result<Vec<RankingEntry>, String> {
     if !RANKING_TERMS.contains(&term) {
         return Err(format!("未知的榜单周期: {term}"));
@@ -36,7 +42,50 @@ pub fn fetch_ranking(term: &str, proxy: &ProxyConfig) -> Result<Vec<RankingEntry
         return Err(format!("HTTP {} while fetching {}", resp.status(), url));
     }
     let html = resp.text().map_err(|e| e.to_string())?;
-    Ok(parse_ranking(&html))
+    let mut entries = parse_ranking(&html);
+    refine_ratings(&client, &mut entries);
+    Ok(entries)
+}
+
+/// 批量拉取作品信息接口，用 `rate_average_2dp` 覆盖榜单评分。
+/// 每批 100 个 RJ 号；接口失败时保留榜单页解析出的 0.5 精度星值。
+fn refine_ratings(client: &reqwest::blocking::Client, entries: &mut [RankingEntry]) {
+    for chunk in entries.chunks_mut(100) {
+        let ids = chunk
+            .iter()
+            .map(|e| e.rj_code.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let Ok(resp) = client
+            .get(PRODUCT_INFO_URL)
+            .query(&[("product_id", ids)])
+            .send()
+        else {
+            break;
+        };
+        if !resp.status().is_success() {
+            break;
+        }
+        let Ok(text) = resp.text() else { break };
+        apply_ratings(&text, chunk);
+    }
+}
+
+/// 从作品信息接口响应中提取各作品的 `rate_average_2dp` 覆盖评分；接口未返回的作品保留原值。
+fn apply_ratings(json_text: &str, entries: &mut [RankingEntry]) {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(json_text) else {
+        return;
+    };
+    for e in entries {
+        let Some(r) = json
+            .get(&e.rj_code)
+            .and_then(|v| v.get("rate_average_2dp"))
+            .and_then(|x| x.as_f64())
+        else {
+            continue;
+        };
+        e.rating = Some(r);
+    }
 }
 
 /// 解析排行榜页面 HTML。
@@ -322,5 +371,53 @@ mod tests {
     #[test]
     fn rejects_unknown_term() {
         assert!(fetch_ranking("hourly", &ProxyConfig::default()).is_err());
+    }
+
+    #[test]
+    fn apply_ratings_overrides_with_2dp() {
+        let json = r#"{"RJ01697941":{"rate_average_2dp":4.7},"RJ01737345":{"rate_average_2dp":4.84}}"#;
+        let mut entries = vec![
+            RankingEntry {
+                rank: 1,
+                rj_code: "RJ01697941".into(),
+                title: None,
+                circle_name: None,
+                cover_url: None,
+                price: None,
+                sale_date: None,
+                dl_count: None,
+                rating: Some(5.0),
+                tags: vec![],
+            },
+            RankingEntry {
+                rank: 2,
+                rj_code: "RJ01737345".into(),
+                title: None,
+                circle_name: None,
+                cover_url: None,
+                price: None,
+                sale_date: None,
+                dl_count: None,
+                rating: Some(4.5),
+                tags: vec![],
+            },
+            // 接口未返回的作品保留榜单页的 0.5 精度值
+            RankingEntry {
+                rank: 3,
+                rj_code: "RJ09999999".into(),
+                title: None,
+                circle_name: None,
+                cover_url: None,
+                price: None,
+                sale_date: None,
+                dl_count: None,
+                rating: Some(4.0),
+                tags: vec![],
+            },
+        ];
+        apply_ratings(json, &mut entries);
+        assert_eq!(entries[0].rating, Some(4.7));
+        assert_eq!(entries[1].rating, Some(4.84));
+        assert_eq!(entries[2].rating, Some(4.0));
     }
 }
