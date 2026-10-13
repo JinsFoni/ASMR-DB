@@ -1,4 +1,4 @@
-# 🎧 ASMR DB v2.1.0
+# 🎧 ASMR DB v2.2.0
 
 一个轻量、美观的 **DLsite 作品管理 Web 应用**，聚焦 **ASMR 音声作品** 的管理与播放，同时支持同人游戏、漫画等作品类型。纯浏览器访问，Rust 驱动后端。
 
@@ -140,4 +140,4 @@ cargo run --release --manifest-path server/Cargo.toml
 完整设计规范见 [Doc/设计文档.md](Doc/设计文档.md)（含数据库表结构、API 协议规范、UI/UX 设计）。
 
 ---
-> 由 Bunny 🐰 制作 · ASMR DB v2.1.0
+> 由 Bunny 🐰 制作 · ASMR DB v2.2.0
