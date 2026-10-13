@@ -38,3 +38,7 @@ dom_debug*.html
 # local dev artifacts
 .run/
 .playwright-cli/
+
+# local design drafts (not for repo)
+ui-design/
+.zcodeignore
