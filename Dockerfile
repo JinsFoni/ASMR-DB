@@ -29,8 +29,6 @@ RUN apt-get update && \
 WORKDIR /app
 COPY --from=backend-builder /build/target/release/asmr-db /app/asmr-db
 COPY --from=frontend-builder /build/dist /app/dist
-# 日中标签映射表（同时已通过 include_str! 编译进二进制；此处落盘便于查看/替换）
-COPY server/assets/tag-map.json /app/assets/tag-map.json
 
 ENV ASMR_HOST=0.0.0.0 \
     ASMR_PORT=1421 \
