@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import { Check, ImageOff, Loader2, Star } from "lucide-vue-next";
+import { Check, ImageOff, Loader2, Pause, Play, Star } from "lucide-vue-next";
 import { imgUrl } from "../../lib/api";
 import type { WorkView } from "../../lib/types";
 
@@ -11,8 +11,15 @@ const props = defineProps<{
   selectMode?: boolean;
   /** poster: 3:4 竖版海报（默认，裁切）；cover: 完整横版封面（不裁切） */
   variant?: "poster" | "cover";
+  /** 正在拉取音轨（播放按钮转圈） */
+  playLoading?: boolean;
+  /** 该作品已加载进播放器（图标切暂停） */
+  playCurrent?: boolean;
 }>();
-const emit = defineEmits<{ (e: "toggle-select", id: number): void }>();
+const emit = defineEmits<{
+  (e: "toggle-select", id: number): void;
+  (e: "play", view: WorkView): void;
+}>();
 
 const wide = computed(() => props.variant === "cover");
 
@@ -36,6 +43,7 @@ const wishlistText = computed(() =>
   props.view.work.wishlist_count != null ? props.view.work.wishlist_count.toLocaleString() : ""
 );
 const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
+const hasAudio = computed(() => props.view.track_count > 0);
 </script>
 
 <template>
@@ -74,6 +82,18 @@ const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
       >
         <Loader2 :size="10" class="animate-spin" /> 下载中
       </span>
+
+      <!-- 左下角：播放按钮（有本地音轨才显示） -->
+      <button
+        v-if="hasAudio && !selectMode"
+        class="play-btn"
+        :title="playCurrent ? '暂停 / 继续' : '播放'"
+        @click.stop.prevent="emit('play', view)"
+      >
+        <Loader2 v-if="playLoading" :size="13" class="animate-spin" />
+        <Pause v-else-if="playCurrent" :size="14" />
+        <Play v-else :size="14" class="play-ico" />
+      </button>
 
       <!-- 评分角标（封面右下角，与榜单卡片金色星标同风格） -->
       <span v-if="view.work.rating != null && !selectMode" class="rating-badge">
@@ -157,13 +177,36 @@ const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
   font-weight: 700;
   color: #fff;
   background: rgba(48, 209, 88, 0.92);
-  backdrop-filter: blur(6px);
   border-radius: 999px;
   padding: 3px 9px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
 }
 .dl-badge-downloading {
   background: rgba(47, 143, 239, 0.92);
+}
+.play-btn {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.78);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s, transform 0.15s;
+}
+.play-btn:hover {
+  background: var(--blue);
+  transform: scale(1.08);
+}
+.play-ico {
+  margin-left: 1.5px; /* 视觉居中：三角形几何中心偏左 */
 }
 .rating-badge {
   position: absolute;
@@ -175,8 +218,7 @@ const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
   font-size: 11px;
   font-weight: 700;
   color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
+  background: rgba(20, 20, 24, 0.78);
   border-radius: 999px;
   padding: 3px 8px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);

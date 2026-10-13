@@ -48,7 +48,7 @@ const {
   reload,
   onTagsUpdated,
   runAction,
-  copiedReset,
+  copyRj,
   onFileTreeDownload,
   onFolderPicked,
 } = useWorkDetail({ source: "work", id });
@@ -97,7 +97,7 @@ function openAsmrOne() {
     @tags-updated="onTagsUpdated()"
     @back="router.back()"
     @action="runAction"
-    @copy-rj="copiedReset()"
+    @copy-rj="copyRj()"
     @file-tree-download="onFileTreeDownload"
     @folder-picked="onFolderPicked"
     @error-link="openAsmrOne"

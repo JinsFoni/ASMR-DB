@@ -266,5 +266,22 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     let _ = conn.execute("ALTER TABLE works ADD COLUMN wishlist_count INTEGER", []);
     let _ = conn.execute("ALTER TABLE works ADD COLUMN rating REAL", []);
 
+    // 在线作品元数据缓存表：榜单/在线/最新页卡片对未入库作品的详情补齐
+    // （preview_by_rj 读穿落库，24h 内不再打外网）。
+    conn.execute(
+        r#"
+        CREATE TABLE IF NOT EXISTS work_meta_cache (
+            rj_code     TEXT NOT NULL,
+            source      TEXT NOT NULL DEFAULT 'dlsite',
+            data_json   TEXT NOT NULL,
+            fetched_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (rj_code, source)
+        );
+        CREATE INDEX IF NOT EXISTS idx_work_meta_cache_fetched
+        ON work_meta_cache(fetched_at);
+        "#,
+        [],
+    )?;
+
     Ok(())
 }

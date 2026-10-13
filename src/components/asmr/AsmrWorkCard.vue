@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { BookmarkCheck, Captions, ImageOff, Loader2, Star } from "lucide-vue-next";
+import { BookmarkCheck, Captions, ImageOff, Loader2, Pause, Play, Star } from "lucide-vue-next";
 import { imgUrl } from "../../lib/api";
 import type { AsmrOnlineWork } from "../../lib/types";
 
@@ -10,11 +10,18 @@ const props = defineProps<{
   localWorkId?: number | null;
   /** 该卡片正在执行入库 */
   adding?: boolean;
+  /** 有音频可播（本地已入库有音轨，或在线时长已知）；缺省 false 不显示按钮 */
+  playable?: boolean;
+  /** 正在拉取音轨 */
+  playLoading?: boolean;
+  /** 该作品已加载进播放器（图标切暂停） */
+  playCurrent?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "open", item: AsmrOnlineWork): void;
   (e: "add", item: AsmrOnlineWork): void;
+  (e: "play", item: AsmrOnlineWork): void;
 }>();
 
 const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? null);
@@ -46,18 +53,32 @@ const wishlistText = computed(() =>
         <ImageOff :size="28" />
       </div>
 
-      <!-- 字幕标识（封面左下角） -->
-      <span v-if="item.has_subtitle" class="sub-badge" title="该作品带字幕文件">
-        <Captions :size="11" /> 字幕
-      </span>
+      <!-- 左下角：播放按钮 -->
+      <div class="cover-bl">
+        <button
+          v-if="playable && !adding"
+          class="play-btn"
+          :title="playCurrent ? '暂停 / 继续' : '播放'"
+          @click.stop="emit('play', item)"
+        >
+          <Loader2 v-if="playLoading" :size="13" class="animate-spin" />
+          <Pause v-else-if="playCurrent" :size="14" />
+          <Play v-else :size="14" class="play-ico" />
+        </button>
+      </div>
 
       <!-- 已入库角标（设计稿 .corner） -->
       <span v-if="localId" class="corner"><BookmarkCheck :size="10" /> 已入库</span>
 
-      <!-- 评分角标（封面右下角，与作品库卡片同款） -->
-      <span v-if="item.rating != null" class="rating-badge">
-        <Star :size="10" class="rating-star" /> {{ item.rating }}
-      </span>
+      <!-- 右下角：字幕标识 + 评分角标 -->
+      <div class="cover-br">
+        <span v-if="item.has_subtitle" class="sub-badge" title="该作品带字幕文件">
+          <Captions :size="11" /> 字幕
+        </span>
+        <span v-if="item.rating != null" class="rating-badge">
+          <Star :size="10" class="rating-star" /> {{ item.rating }}
+        </span>
+      </div>
     </div>
 
     <h3 :title="title">{{ title }}</h3>
@@ -124,25 +145,49 @@ const wishlistText = computed(() =>
   gap: 4px;
   font-size: 10.5px;
   font-weight: 700;
-  color: #fff;
-  background: rgba(48, 209, 88, 0.92);
-  backdrop-filter: blur(6px);
+  color: var(--green);
+  background: rgba(20, 20, 24, 0.78);
   border-radius: 999px;
   padding: 3px 9px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
 }
-.sub-badge {
+.cover-bl {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
+  left: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.play-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.78);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s, transform 0.15s;
+}
+.play-btn:hover {
+  background: var(--blue);
+  transform: scale(1.08);
+}
+.play-ico {
+  margin-left: 1.5px; /* 视觉居中：三角形几何中心偏左 */
+}
+.sub-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 10.5px;
   font-weight: 700;
   color: #fff;
-  background: rgba(28, 28, 32, 0.72);
-  backdrop-filter: blur(6px);
+  background: rgba(24, 24, 28, 0.82);
   border-radius: 999px;
   padding: 3px 9px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px rgba(255, 255, 255, 0.16);
@@ -200,18 +245,23 @@ const wishlistText = computed(() =>
   white-space: nowrap;
   text-align: right;
 }
-.rating-badge {
+.cover-br {
   position: absolute;
-  bottom: 8px;
   right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.rating-badge {
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 3px;
   font-size: 11px;
   font-weight: 700;
   color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
+  background: rgba(20, 20, 24, 0.78);
   border-radius: 999px;
   padding: 3px 8px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);

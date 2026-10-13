@@ -6,12 +6,14 @@ import { imgUrl } from "../lib/api";
 import * as api from "../lib/api";
 import type { AsmrOnlineWork, AsmrPlaylist, AsmrWorksPage } from "../lib/types";
 import AsmrWorkCard from "../components/asmr/AsmrWorkCard.vue";
+import { useCardPlay } from "../composables/useCardPlay";
 import { useWorksStore } from "../stores/works";
 
 const router = useRouter();
 const worksStore = useWorksStore();
 const addingId = ref<string | number | null>(null);
 const route = useRoute();
+const { playItem, isItemCurrent, isItemLoading } = useCardPlay();
 
 const SOURCE_TABS = [
   { value: "popular", label: "热门" },
@@ -344,8 +346,12 @@ onActivated(() => {
         :key="`${item.id}-${item.rj_code}`"
         :item="item"
         :adding="addingId === item.id"
+        :playable="!!item.duration_sec || !!item.local_work_id"
+        :play-loading="isItemLoading(item)"
+        :play-current="isItemCurrent(item)"
         @open="open"
         @add="addToLibrary"
+        @play="playItem"
       />
     </div>
 

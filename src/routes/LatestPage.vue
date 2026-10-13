@@ -5,11 +5,13 @@ import { Loader2 } from "lucide-vue-next";
 import * as api from "../lib/api";
 import type { AsmrOnlineWork, AsmrWorksPage } from "../lib/types";
 import AsmrWorkCard from "../components/asmr/AsmrWorkCard.vue";
+import { useCardPlay } from "../composables/useCardPlay";
 import { useWorksStore } from "../stores/works";
 
 const router = useRouter();
 const worksStore = useWorksStore();
 const route = useRoute();
+const { playItem, isItemCurrent, isItemLoading } = useCardPlay();
 
 const ORDERS = [
   { value: "release", label: "最新", hint: "最新发售" },
@@ -36,7 +38,9 @@ async function load() {
     items.value = res.items;
     hasNext.value = res.hasNext;
     // 传响应式代理（items.value）而非原始数组：直接改原始对象不会触发卡片重渲染
-    enrichMeta(items.value);
+    const seq = ++enrichSeq;
+    enrichMeta(items.value, seq);
+    probeAudio(items.value, seq);
   } catch (e) {
     error.value = String(e);
     items.value = [];
@@ -47,10 +51,45 @@ async function load() {
 }
 
 let enrichSeq = 0;
+/** asmr.one 收录探测结果（RJ → 有无可播音频），DLsite 列表数据本身不携带该信息 */
+const audioProbed = ref(new Map<string, boolean>());
+
+/** 卡片有无可播音频：本地有音轨，或 asmr.one 已收录（探测写回） */
+function hasAudio(item: AsmrOnlineWork): boolean {
+  if (!item.rj_code) return false;
+  const rj = item.rj_code.toUpperCase();
+  const local = worksStore.works.find((v) => v.work.rj_code?.toUpperCase() === rj);
+  if (local && local.track_count > 0) return true;
+  return audioProbed.value.get(rj) === true;
+}
+
+/** 后台探测列表里每个未入库作品在 asmr.one 的收录情况（HEAD 探测很轻，全量并发）。
+ *  每个结果单独触发一次 30 张卡的重渲染会形成渲染风暴（实测滚动掉帧的元凶），
+ *  改为收集完统一批量写回，只重渲染一次。 */
+async function probeAudio(list: AsmrOnlineWork[], seq: number) {
+  const results = await Promise.all(
+    list.map(async (item) => {
+      if (!item.rj_code) return null;
+      const rj = item.rj_code.toUpperCase();
+      if (audioProbed.value.has(rj)) return null;
+      return [rj, await api.hasAsmroneAudio(rj)] as const;
+    })
+  );
+  if (seq !== enrichSeq) return;
+  let changed = false;
+  const next = new Map(audioProbed.value);
+  for (const r of results) {
+    if (r) {
+      next.set(r[0], r[1]);
+      changed = true;
+    }
+  }
+  if (changed) audioProbed.value = next;
+}
+
 /** 后台补齐卡片元数据（收藏数/评分/声优/发售日期，与在线页同一策略）：
  *  已入库作品直接取本地库（无外网请求），未入库的走 DLsite 统一预览接口（服务端短 TTL 缓存）。 */
-async function enrichMeta(list: AsmrOnlineWork[]) {
-  const seq = ++enrichSeq;
+async function enrichMeta(list: AsmrOnlineWork[], seq: number) {
   // 本地库归一化成与 ScrapedWork 同形的补丁，两条路径共用一套合并逻辑
   const byRj = new Map(
     worksStore.works
@@ -63,6 +102,7 @@ async function enrichMeta(list: AsmrOnlineWork[]) {
           sale_date: v.work.sale_date,
           actors: v.actors,
           tags: v.tags.map((t) => t.name),
+          duration_min: v.total_duration_sec ? Math.round(v.total_duration_sec / 60) : null,
         },
       ])
   );
@@ -80,6 +120,7 @@ async function enrichMeta(list: AsmrOnlineWork[]) {
           sale_date: s.sale_date,
           actors: s.actors,
           tags: s.tags,
+          duration_min: s.duration_min,
         };
       }
       if (seq !== enrichSeq) return;
@@ -88,7 +129,7 @@ async function enrichMeta(list: AsmrOnlineWork[]) {
       if (meta.sale_date) item.release = meta.sale_date;
       if (meta.actors.length) item.vas = meta.actors;
       if (meta.tags.length) item.tags = meta.tags;
-      // 本页数据源本就是 DLsite，声优以列表页抓到的为准即可；标签/评分等详情逐卡后台补齐
+      if (meta.duration_min) item.duration_sec = meta.duration_min * 60;
     } catch {
       // 抓取失败（如 DLsite 下架）保持列表页原值，静默降级
     }
@@ -198,13 +239,19 @@ onActivated(() => {
 
     <!-- 卡片网格（与在线页同一卡片与网格） -->
     <div v-if="!loading && items.length" class="grid-works">
+      <!-- 播放按钮显隐 = 真实有无音频：本地已入库看 track_count，
+           未入库的由 HEAD /api/asmr/tracks 探测 asmr.one 收录情况（enrichMeta 内逐个写回） -->
       <AsmrWorkCard
         v-for="item in items"
         :key="`${item.id}-${item.rj_code}`"
         :item="item"
         :adding="addingId === item.id"
+        :playable="hasAudio(item)"
+        :play-loading="isItemLoading(item)"
+        :play-current="isItemCurrent(item)"
         @open="open"
         @add="addToLibrary"
+        @play="playItem"
       />
     </div>
 

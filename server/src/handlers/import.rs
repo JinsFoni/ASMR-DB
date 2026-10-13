@@ -125,7 +125,9 @@ pub async fn import_by_rj(
     ))
 }
 
-/// 只抓取元数据（不保存），用于导入前预览。
+/// 只抓取元数据（不保存入库），用于导入前预览与在线卡片元数据补齐。
+/// 读穿三级：内存 TTL（5min）→ work_meta_cache 表（24h）→ 外网回源并写回两级。
+/// 重启进程后内存缓存清空，但表里的数据仍在，未入库作品的卡片补齐不再重新打外网。
 pub async fn preview_by_rj(
     State(state): State<SharedState>,
     Json(body): Json<RjSourceBody>,
@@ -133,18 +135,58 @@ pub async fn preview_by_rj(
     let (token, proxy, asmr_api_base) = load_asmr_settings(&state).await?;
     let rj = body.rj_code.trim().to_uppercase();
     let source = body.source;
-    // 短 TTL 缓存：DLsite 详情页首屏即此请求（0.7–0.9s/次 → 命中后毫秒级）。
+    let source_key = source.as_deref().unwrap_or("dlsite").to_string();
+    // 内存短 TTL：DLsite 详情页首屏即此请求（0.7–0.9s/次 → 命中后毫秒级）。
     // key 含 source：asmrone 源与 DLsite 源的数据不同，不能互串。
     let scraped = crate::api::cache::asmrcache::scraped_preview()
-        .get_or_fetch(&format!("{}:{}", rj, source.as_deref().unwrap_or("dlsite")), {
+        .get_or_fetch(&format!("{}:{}", rj, source_key), {
+            let state = state.clone();
             let rj = rj.clone();
+            let source = source.clone();
+            let source_key = source_key.clone();
+            let proxy = proxy.clone();
+            let asmr_api_base = asmr_api_base.clone();
             move || async move {
-                tokio::task::spawn_blocking(move || {
-                    fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
-                        .map_err(|e| e.to_string())
+                // 内存未命中 → 查库（24h 新鲜即用）
+                let from_db = tokio::task::spawn_blocking({
+                    let state = state.clone();
+                    let rj = rj.clone();
+                    let source_key = source_key.clone();
+                    move || -> Option<ScrapedWork> {
+                        let conn = state.db.get().ok()?;
+                        queries::get_work_meta(&conn, &rj, &source_key, 24).ok().flatten()
+                    }
                 })
                 .await
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                if let Some(w) = from_db {
+                    return Ok(w);
+                }
+                // 库里没有/过期 → 外网回源，成功后写回库
+                let fetched = tokio::task::spawn_blocking({
+                    let rj = rj.clone();
+                    let source = source.clone();
+                    move || {
+                        fetch_metadata(&rj, source.as_deref(), Some(&token), &proxy, &asmr_api_base)
+                            .map_err(|e| e.to_string())
+                    }
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+                if let Ok(w) = &fetched {
+                    let _ = tokio::task::spawn_blocking({
+                        let state = state.clone();
+                        let w = w.clone();
+                        let source_key = source_key.clone();
+                        move || {
+                            if let Ok(conn) = state.db.get() {
+                                let _ = queries::put_work_meta(&conn, &w, &source_key);
+                            }
+                        }
+                    })
+                    .await;
+                }
+                fetched
             }
         })
         .await

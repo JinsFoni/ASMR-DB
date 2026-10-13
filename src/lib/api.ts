@@ -236,6 +236,29 @@ export function listAsmroneTracks(rjCode: string): Promise<Track[]> {
   );
 }
 
+/**
+ * asmr.one 是否收录该作品且有可播放音频（HEAD 存在性探测）。
+ * 后端复用 tracks JSON 缓存，请求很轻；结果缓存 5 分钟（有音频与否基本不变），
+ * 供列表页批量判断播放按钮显隐。
+ */
+export function hasAsmroneAudio(rjCode: string): Promise<boolean> {
+  const key = `ext:asmr-has-audio:${rjCode.toUpperCase()}`;
+  const hit = cacheMap.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value as Promise<boolean>;
+  const running = inflight.get(key);
+  if (running) return running as Promise<boolean>;
+  const p = fetch(`/api/asmr/tracks${qs({ rj: rjCode })}`, { method: "HEAD" })
+    .then((res) => res.ok)
+    .catch(() => false)
+    .then((has) => {
+      cacheMap.set(key, { value: has, expiresAt: Date.now() + 300_000 });
+      return has;
+    })
+    .finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p;
+}
+
 export function listAsmroneTree(rjCode: string): Promise<AsmrTreeNode[]> {
   return cached(`ext:asmr-tree:${rjCode.toUpperCase()}`, () =>
     get(`/api/asmr/tree${qs({ rj: rjCode })}`)

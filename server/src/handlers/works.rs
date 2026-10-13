@@ -1,4 +1,5 @@
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
@@ -440,6 +441,24 @@ pub async fn list_asmrone_tracks(
 #[derive(Deserialize)]
 pub struct AsmrRjQuery {
     pub rj: String,
+}
+
+/// HEAD 存在性探测：asmr.one 是否收录该作品且有可播放音频。
+/// 复用 tracks JSON 缓存，成功且至少一条可播才返回 200；未收录/无音频返回 404，
+/// 供列表页判断播放按钮显隐（体积远小于拉全量音轨列表）。
+pub async fn head_asmrone_tracks(
+    State(state): State<SharedState>,
+    Query(q): Query<AsmrRjQuery>,
+) -> StatusCode {
+    match fetch_asmr_tracks_json(&state, &q.rj).await {
+        Ok(v) if crate::api::asmrone::collect_tracks_and_subtitles(&v)
+            .iter()
+            .any(|f| !f.stream_url.trim().is_empty()) =>
+        {
+            StatusCode::OK
+        }
+        _ => StatusCode::NOT_FOUND,
+    }
 }
 
 pub async fn list_asmrone_tree(

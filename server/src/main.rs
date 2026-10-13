@@ -267,7 +267,11 @@ async fn main() {
             get(handlers::asmr::work_detail),
         )
         // ============ asmr.one ============
-        .route("/api/asmr/tracks", get(handlers::works::list_asmrone_tracks))
+        .route(
+            "/api/asmr/tracks",
+            get(handlers::works::list_asmrone_tracks)
+                .head(handlers::works::head_asmrone_tracks),
+        )
         .route("/api/asmr/tree", get(handlers::works::list_asmrone_tree))
         .route("/api/asmr/file/{*hash}", get(handlers::media::asmr_file))
         // ============ 图片缓存代理 ============

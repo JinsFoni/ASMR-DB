@@ -67,7 +67,7 @@ export interface UseWorkDetail {
   showUrlInput: Ref<boolean>;
   dlUrl: Ref<string>;
   busyKey: Ref<ActionKey | null>;
-  copiedReset: () => void;
+  copyRj: () => Promise<void>;
   reload: () => Promise<void>;
   runAction: (key: ActionKey) => Promise<void>;
   onFileTreeDownload: (files: AsmrDownloadFile[]) => Promise<void>;
@@ -467,7 +467,23 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     load();
   }
 
-  function copiedReset() {
+  /** 复制 RJ 号到剪贴板；成功后短暂显示「已复制」。 */
+  async function copyRj() {
+    const rj = rjCode.value;
+    if (!rj) return;
+    try {
+      await navigator.clipboard.writeText(rj);
+    } catch {
+      // 剪贴板 API 被拒（非安全上下文等）时退回 execCommand
+      const ta = document.createElement("textarea");
+      ta.value = rj;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
     copied.value = true;
     setTimeout(() => (copied.value = false), 1500);
   }
@@ -715,7 +731,7 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
     showUrlInput,
     dlUrl,
     busyKey,
-    copiedReset,
+    copyRj,
     reload: load,
     runAction,
     onFileTreeDownload,

@@ -939,6 +939,55 @@ pub fn rankings_stale(
     Ok(false)
 }
 
+/// 读取在线作品元数据缓存（work_meta_cache 表）。max_age_hours 内视为新鲜；
+/// 过期条目顺手删除，避免表无限增长。
+pub fn get_work_meta(
+    conn: &Connection,
+    rj: &str,
+    source: &str,
+    max_age_hours: i64,
+) -> Result<Option<ScrapedWork>, rusqlite::Error> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT data_json FROM work_meta_cache
+             WHERE rj_code = ?1 COLLATE NOCASE AND source = ?2",
+            params![rj, source],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(json) = row else { return Ok(None) };
+    let fresh: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM work_meta_cache
+         WHERE rj_code = ?1 COLLATE NOCASE AND source = ?2
+           AND fetched_at >= datetime('now', ?3)",
+        params![rj, source, format!("-{max_age_hours} hours")],
+        |r| r.get(0),
+    )?;
+    if fresh == 0 {
+        conn.execute(
+            "DELETE FROM work_meta_cache WHERE rj_code = ?1 COLLATE NOCASE AND source = ?2",
+            params![rj, source],
+        )?;
+        return Ok(None);
+    }
+    Ok(serde_json::from_str(&json).ok())
+}
+
+/// 写入在线作品元数据缓存（按 RJ+source UPSERT，刷新 fetched_at）。
+pub fn put_work_meta(conn: &Connection, w: &ScrapedWork, source: &str) -> Result<(), rusqlite::Error> {
+    let json = serde_json::to_string(w).map_err(|_| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::fmt::Error))
+    })?;
+    conn.execute(
+        r#"INSERT INTO work_meta_cache (rj_code, source, data_json, fetched_at)
+           VALUES (?1, ?2, ?3, datetime('now'))
+           ON CONFLICT(rj_code, source) DO UPDATE SET
+            data_json = excluded.data_json, fetched_at = excluded.fetched_at"#,
+        params![w.rj_code.to_uppercase(), source, json],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -989,6 +1038,13 @@ mod tests {
                 PRIMARY KEY (term, position)
             );
             CREATE VIRTUAL TABLE works_fts USING fts5(rj_code, title_ja, title_zh, title_en, circle_name, description);
+            CREATE TABLE work_meta_cache (
+                rj_code     TEXT NOT NULL,
+                source      TEXT NOT NULL DEFAULT 'dlsite',
+                data_json   TEXT NOT NULL,
+                fetched_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (rj_code, source)
+            );
             "#,
         )
         .unwrap();
@@ -1162,5 +1218,47 @@ mod tests {
 
         // 未入库返回 None
         assert!(get_work_by_rj(&conn, "RJ999999").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_work_meta_cache_roundtrip_and_expiry() {
+        let conn = test_conn();
+        let w = ScrapedWork {
+            rj_code: "RJ123456".into(),
+            title_ja: Some("テスト作品".into()),
+            rating: Some(4.5),
+            ..Default::default()
+        };
+        put_work_meta(&conn, &w, "dlsite").unwrap();
+
+        // 大小写不敏感读取，内容还原一致
+        let got = get_work_meta(&conn, "rj123456", "dlsite", 24).unwrap().unwrap();
+        assert_eq!(got.title_ja.as_deref(), Some("テスト作品"));
+        assert_eq!(got.rating, Some(4.5));
+
+        // source 不同互不串
+        assert!(get_work_meta(&conn, "RJ123456", "asmrone", 24).unwrap().is_none());
+
+        // 刚写入的未过期
+        assert!(get_work_meta(&conn, "RJ123456", "dlsite", 24).unwrap().is_some());
+        // 手工把 fetched_at 改旧到 2 天前 → 过期并被删除
+        conn.execute(
+            "UPDATE work_meta_cache SET fetched_at = datetime('now', '-2 days')",
+            [],
+        )
+        .unwrap();
+        assert!(get_work_meta(&conn, "RJ123456", "dlsite", 24).unwrap().is_none());
+        let cnt: i64 = conn
+            .query_row("SELECT COUNT(*) FROM work_meta_cache", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cnt, 0, "过期条目应被删除");
+
+        // UPSERT：重复写同一 RJ 刷新而不是新增
+        put_work_meta(&conn, &w, "dlsite").unwrap();
+        put_work_meta(&conn, &w, "dlsite").unwrap();
+        let cnt: i64 = conn
+            .query_row("SELECT COUNT(*) FROM work_meta_cache", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cnt, 1);
     }
 }
