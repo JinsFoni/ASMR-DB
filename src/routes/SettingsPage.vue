@@ -147,7 +147,37 @@ function selectTheme(t: ThemeName) {
 }
 
 async function save() {
-  await api.setSettings(theme.value, downloadDir.value || undefined);
+  // 全局「保存设置」持久化页面所有区块的当前值，避免只存主题/目录导致
+  // 其他区块（代理开关等）已改动但未保存的状态在刷新后回退
+  await api.setSettings(
+    theme.value,
+    downloadDir.value || undefined,
+    {
+      url: proxyUrl.value.trim(),
+      dlsite: proxyDlsite.value,
+      asmrone: proxyAsmrone.value,
+      llm: proxyLlm.value,
+    },
+    {
+      address: asmrAddress.value.trim(),
+      username: asmrUsername.value.trim(),
+      password: asmrPassword.value,
+    },
+    {
+      endpoint: llmEndpoint.value.trim(),
+      apiKey: llmApiKey.value.trim(),
+      model: llmModel.value.trim(),
+      maxRetry: Number(llmMaxRetry.value) || 3,
+      rps: Number(llmRps.value) || 2,
+      threads: Number(llmThreads.value) || 1,
+      auto: llmAuto.value,
+      prompt: llmPrompt.value,
+    },
+    {
+      maxMb: Math.max(0, Number(imgCacheMaxMb.value) || 0),
+      ttlHours: Math.max(1, Number(imgCacheTtlHours.value) || 168),
+    },
+  );
   applyTheme(theme.value);
   saved.value = true;
   setTimeout(() => (saved.value = false), 1500);
