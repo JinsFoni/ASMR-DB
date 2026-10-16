@@ -178,6 +178,8 @@ export interface AsmrOnlineWork {
   description: string | null;
   /** 本地作品 id（播放历史等本站数据直接关联本地） */
   local_work_id: number | null;
+  /** 当前登录用户是否已在 asmr.one 收藏（userRating/progress 标记） */
+  user_marked?: boolean;
 }
 
 export interface AsmrWorksPage {

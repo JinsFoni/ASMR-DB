@@ -195,6 +195,17 @@ async function addToLibrary(item: AsmrOnlineWork) {
   }
 }
 
+/** 卡片收藏同步到 asmr.one 账号：卡片已乐观切换，失败时经 done(false) 回滚 */
+async function syncFavorite(item: AsmrOnlineWork, favorite: boolean, done: (ok: boolean) => void) {
+  try {
+    await api.asmrSetFavorite(item.id, favorite);
+    done(true);
+  } catch (e) {
+    done(false);
+    alert(`收藏同步失败: ${e}`);
+  }
+}
+
 function prevPage() {
   if (page.value <= 1) return;
   page.value -= 1;
@@ -352,6 +363,7 @@ onActivated(() => {
         @open="open"
         @add="addToLibrary"
         @play="playItem"
+        @favorite="syncFavorite"
       />
     </div>
 

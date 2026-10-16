@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { BookmarkCheck, Captions, ImageOff, Loader2, Pause, Play, Star } from "lucide-vue-next";
+import { computed, ref } from "vue";
+import { BookmarkCheck, Captions, Heart, ImageOff, Loader2, Pause, Play, Star } from "lucide-vue-next";
 import { imgUrl } from "../../lib/api";
 import type { AsmrOnlineWork } from "../../lib/types";
 
@@ -22,6 +22,7 @@ const emit = defineEmits<{
   (e: "open", item: AsmrOnlineWork): void;
   (e: "add", item: AsmrOnlineWork): void;
   (e: "play", item: AsmrOnlineWork): void;
+  (e: "favorite", item: AsmrOnlineWork, favorite: boolean, done: (ok: boolean) => void): void;
 }>();
 
 const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? null);
@@ -34,6 +35,21 @@ const dateText = computed(() => props.item.release?.slice(0, 10) || "");
 const wishlistText = computed(() =>
   props.item.wishlist_count != null ? props.item.wishlist_count.toLocaleString() : ""
 );
+
+/* 收藏到 asmr.one 账号：父组件负责请求，完成后回调回滚状态 */
+const marked = computed(() => !!props.item.user_marked);
+const favLoading = ref(false);
+function toggleFavorite() {
+  if (favLoading.value) return;
+  const next = !marked.value;
+  // 乐观更新：立即切换图标，父组件请求失败后经 done(false) 回滚
+  props.item.user_marked = next;
+  favLoading.value = true;
+  emit("favorite", props.item, next, (ok) => {
+    if (!ok) props.item.user_marked = !next;
+    favLoading.value = false;
+  });
+}
 </script>
 
 <template>
@@ -52,6 +68,18 @@ const wishlistText = computed(() =>
       <div v-else class="w-full h-full flex items-center justify-center" style="color: var(--label-3)">
         <ImageOff :size="28" />
       </div>
+
+      <!-- 左上角：收藏到 asmr.one 账号 -->
+      <button
+        v-if="item.id"
+        class="fav-btn"
+        :class="{ on: marked }"
+        :title="marked ? '取消收藏（asmr.one）' : '收藏到 asmr.one 账号'"
+        @click.stop="toggleFavorite"
+      >
+        <Loader2 v-if="favLoading" :size="13" class="animate-spin" />
+        <Heart v-else :size="13" class="fav-ico" />
+      </button>
 
       <!-- 左下角：播放按钮 -->
       <div class="cover-bl">
@@ -158,6 +186,35 @@ const wishlistText = computed(() =>
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.fav-btn {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(20, 20, 24, 0.78);
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s, transform 0.15s;
+  z-index: 2;
+}
+.fav-btn:hover {
+  background: var(--blue);
+  transform: scale(1.08);
+}
+.fav-btn.on {
+  background: rgba(20, 20, 24, 0.78);
+}
+.fav-btn.on .fav-ico {
+  color: #ff375f;
+  fill: #ff375f;
 }
 .play-btn {
   width: 28px;

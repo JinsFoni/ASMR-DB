@@ -213,6 +213,7 @@ fn work_to_online(w: Work) -> AsmrOnlineWork {
         has_subtitle: false,
         description: None,
         local_work_id: Some(w.id),
+        user_marked: false,
     }
 }
 
@@ -236,4 +237,32 @@ pub async fn work_detail(
         .map_err(AppError::new)?;
     let items = annotate_local(&state, vec![detail]).await?;
     Ok(Json(items.into_iter().next().unwrap_or_default()))
+}
+
+#[derive(Deserialize)]
+pub struct FavoriteBody {
+    /// asmr.one 作品数字 id
+    pub id: i64,
+    /// true=收藏（marked），false=取消收藏
+    pub favorite: bool,
+}
+
+/// POST /api/asmr/favorite — 同步收藏到 asmr.one 账号（PUT / DELETE /api/review）。
+pub async fn set_favorite(
+    State(state): State<SharedState>,
+    Json(body): Json<FavoriteBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let ctx = get_asmr_ctx(&state).await?;
+    let (api_base, proxy) = (ctx.api_base.clone(), ctx.proxy.clone());
+    let fav = body.favorite;
+    let id = body.id;
+    let message = run_with_relogin(&state, move |token: &str| {
+        if fav {
+            asmr_online::add_favorite(&api_base, token, &proxy, id)
+        } else {
+            asmr_online::remove_favorite(&api_base, token, &proxy, id)
+        }
+    })
+    .await?;
+    Ok(Json(json!({ "ok": true, "message": message })))
 }

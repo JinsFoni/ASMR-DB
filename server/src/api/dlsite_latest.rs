@@ -176,6 +176,7 @@ fn parse_latest_page(doc: &Html, page: i64) -> crate::api::asmr_online::AsmrWork
                 has_subtitle: false,
                 description: None,
                 local_work_id: None,
+                user_marked: false,
             })
         })
         .collect();

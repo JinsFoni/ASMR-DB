@@ -573,6 +573,11 @@ export function asmrWorkDetail(id: number | string): Promise<AsmrOnlineWork> {
   return cached(`ext:asmr-work:${id}`, () => get(`/api/asmr/work/${id}`));
 }
 
+/** 同步收藏到 asmr.one 账号（收藏即"想听"标记）。favorite=false 取消收藏。 */
+export function asmrSetFavorite(id: number, favorite: boolean): Promise<{ ok: boolean; message: string }> {
+  return post("/api/asmr/favorite", { id, favorite });
+}
+
 // ---------- DLsite 最新作品 ----------
 
 /** DLsite 音声作品列表（fsr 搜索页，条目结构与在线页一致）。

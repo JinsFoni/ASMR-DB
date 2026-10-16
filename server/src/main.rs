@@ -263,6 +263,10 @@ async fn main() {
             get(handlers::asmr::account),
         )
         .route(
+            "/api/asmr/favorite",
+            post(handlers::asmr::set_favorite),
+        )
+        .route(
             "/api/asmr/work/{id}",
             get(handlers::asmr::work_detail),
         )

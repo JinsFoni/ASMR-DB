@@ -3,6 +3,8 @@
 //! 端点（实测于 api.asmr.one，全部公开可读；收藏需登录态）：
 //! - 列表   GET /api/works?page&order&sort（dl_count=热门下载量 / release=最新 / rating=评分 / random=随机推荐）
 //! - 收藏   GET /api/review?page&order&sort（登录用户的收藏，即评分过的作品）
+//! - 收藏写 PUT /api/review {work_id, rating, review_text, progress}（progress="marked" 即收藏；rating=null 仅收藏不评分）
+//! - 取消收藏 DELETE /api/review?work_id={id}
 //! - 播放列表 GET /api/playlist/get-playlists、GET /api/playlist/get-playlist-works?id&page&pageSize
 //! - 详情   GET /api/work/{id}（source_id 即 RJ 号）
 
@@ -41,6 +43,9 @@ pub struct AsmrOnlineWork {
     pub description: Option<String>,
     #[serde(default)]
     pub local_work_id: Option<i64>,
+    /// 当前登录用户是否已收藏该作品（asmr.one 的 userRating / progress 标记）
+    #[serde(default)]
+    pub user_marked: bool,
 }
 
 /// 分页列表（每页 20 条，与 asmr.one 官方 pageSize 一致）。
@@ -164,6 +169,20 @@ fn parse_work(v: &Value) -> Option<AsmrOnlineWork> {
         vas: names("vas"),
         tags: names("tags"),
         has_subtitle: v.get("has_subtitle").and_then(|x| x.as_bool()).unwrap_or(false),
+        // 登录态下响应携带 userRating（>0）或 progress（marked 等收听状态），视为已收藏
+        user_marked: {
+            let rated = v
+                .get("userRating")
+                .and_then(|x| x.as_f64())
+                .map(|r| r > 0.0)
+                .unwrap_or(false);
+            let marked = v
+                .get("progress")
+                .and_then(|x| x.as_str())
+                .map(|p| !p.is_empty())
+                .unwrap_or(false);
+            rated || marked
+        },
         description: None,
         local_work_id: None,
     })
@@ -219,6 +238,72 @@ pub fn fetch_favorites(
     let url = format!("{api_base}/api/review?page={page}&order=release&sort=desc");
     let d = get_json(&client, &url, token)?;
     Ok(parse_works_page(&d, page))
+}
+
+/// 收藏/标记作品（asmr.one 语义：progress="marked" 想听；rating 传 null 仅收藏不打分）。
+/// 端点：PUT /api/review {work_id, rating, review_text, progress}。
+pub fn add_favorite(
+    api_base: &str,
+    token: &str,
+    proxy: &ProxyConfig,
+    work_id: i64,
+) -> Result<String, String> {
+    let client = build_client(proxy)?;
+    let resp = client
+        .put(format!("{api_base}/api/review"))
+        .header("Authorization", format!("Bearer {}", token.trim()))
+        .json(&serde_json::json!({
+            "work_id": work_id,
+            "rating": Value::Null,
+            "review_text": "",
+            "progress": "marked",
+        }))
+        .send()
+        .map_err(|e| format!("连接 asmr.one 失败: {e}"))?;
+    let status = resp.status();
+    let body: Value = resp.json().unwrap_or(Value::Null);
+    if !status.is_success() {
+        let msg = body
+            .get("error")
+            .and_then(|x| x.as_str())
+            .unwrap_or("未知错误");
+        return Err(format!("HTTP {} 收藏失败: {msg}", status.as_u16()));
+    }
+    Ok(body
+        .get("message")
+        .and_then(|x| x.as_str())
+        .unwrap_or("收藏成功")
+        .to_string())
+}
+
+/// 取消收藏。端点：DELETE /api/review?work_id={id}。
+pub fn remove_favorite(
+    api_base: &str,
+    token: &str,
+    proxy: &ProxyConfig,
+    work_id: i64,
+) -> Result<String, String> {
+    let client = build_client(proxy)?;
+    let resp = client
+        .delete(format!("{api_base}/api/review"))
+        .header("Authorization", format!("Bearer {}", token.trim()))
+        .query(&[("work_id", work_id.to_string())])
+        .send()
+        .map_err(|e| format!("连接 asmr.one 失败: {e}"))?;
+    let status = resp.status();
+    let body: Value = resp.json().unwrap_or(Value::Null);
+    if !status.is_success() {
+        let msg = body
+            .get("error")
+            .and_then(|x| x.as_str())
+            .unwrap_or("未知错误");
+        return Err(format!("HTTP {} 取消收藏失败: {msg}", status.as_u16()));
+    }
+    Ok(body
+        .get("message")
+        .and_then(|x| x.as_str())
+        .unwrap_or("已取消收藏")
+        .to_string())
 }
 
 /// 播放列表概要（不分页返回当前页列表）。
