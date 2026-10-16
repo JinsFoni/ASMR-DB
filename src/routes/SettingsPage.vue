@@ -15,7 +15,6 @@ const downloadStore = useDownloadStore();
 
 const theme = ref<ThemeName>("dark");
 const dbPath = ref("");
-const saved = ref(false);
 
 const downloadDir = ref("");
 const asmrToken = ref("");
@@ -144,43 +143,26 @@ onMounted(async () => {
 function selectTheme(t: ThemeName) {
   theme.value = t;
   applyTheme(t);
+  // 主题即时生效并持久化，无需单独保存
+  api.setSettings(t).catch((e) => alert(`保存主题失败：${e}`));
 }
 
-async function save() {
-  // 全局「保存设置」持久化页面所有区块的当前值，避免只存主题/目录导致
-  // 其他区块（代理开关等）已改动但未保存的状态在刷新后回退
-  await api.setSettings(
-    theme.value,
-    downloadDir.value || undefined,
-    {
-      url: proxyUrl.value.trim(),
-      dlsite: proxyDlsite.value,
-      asmrone: proxyAsmrone.value,
-      llm: proxyLlm.value,
-    },
-    {
-      address: asmrAddress.value.trim(),
-      username: asmrUsername.value.trim(),
-      password: asmrPassword.value,
-    },
-    {
-      endpoint: llmEndpoint.value.trim(),
-      apiKey: llmApiKey.value.trim(),
-      model: llmModel.value.trim(),
-      maxRetry: Number(llmMaxRetry.value) || 3,
-      rps: Number(llmRps.value) || 2,
-      threads: Number(llmThreads.value) || 1,
-      auto: llmAuto.value,
-      prompt: llmPrompt.value,
-    },
-    {
-      maxMb: Math.max(0, Number(imgCacheMaxMb.value) || 0),
-      ttlHours: Math.max(1, Number(imgCacheTtlHours.value) || 168),
-    },
-  );
-  applyTheme(theme.value);
-  saved.value = true;
-  setTimeout(() => (saved.value = false), 1500);
+const downloadSaved = ref(false);
+const downloadSaving = ref(false);
+
+/** 保存默认下载目录 */
+async function saveDownload() {
+  downloadSaving.value = true;
+  try {
+    await api.setSettings(undefined, downloadDir.value || undefined);
+    downloadStore.loadSettings();
+    downloadSaved.value = true;
+    setTimeout(() => (downloadSaved.value = false), 1500);
+  } catch (e) {
+    alert(`保存失败：${e}`);
+  } finally {
+    downloadSaving.value = false;
+  }
 }
 
 async function saveAsmrToken() {
@@ -338,8 +320,12 @@ function handleDirPicked(dir: string) {
       <h2>📦 下载设置</h2>
       <div class="set-row">
         <span class="k">默认下载目录</span>
-        <div class="field"><input v-model="downloadDir" placeholder="默认下载目录" /></div>
+        <div class="field"><input v-model="downloadDir" placeholder="默认下载目录" @keyup.enter="saveDownload" /></div>
         <button class="btn" @click="pickDir">浏览</button>
+        <button class="btn primary" :disabled="downloadSaving" @click="saveDownload">
+          <Check v-if="downloadSaved" :size="13" style="color: var(--green)" />
+          保存
+        </button>
       </div>
     </section>
 
@@ -482,12 +468,7 @@ function handleDirPicked(dir: string) {
     </section>
 
     <div class="save-bar">
-      <span class="hint">部分设置保存后立即生效</span>
-      <button class="btn primary" @click="save">
-        <Loader2 v-if="saved" :size="14" class="animate-spin" />
-        <Check v-else :size="14" style="color: #c9f2d4" />
-        {{ saved ? "已保存" : "保存设置" }}
-      </button>
+      <span class="hint">主题切换立即生效；各区块均有独立保存按钮</span>
     </div>
 
     <!-- 服务端目录选择器 Modal -->
