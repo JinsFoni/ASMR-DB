@@ -117,8 +117,8 @@ onMounted(async () => {
   theme.value = validTheme;
   applyTheme(validTheme);
   dbPath.value = await api.getDbPath();
-  downloadStore.loadSettings();
-  downloadDir.value = downloadStore.settings.download_dir;
+  await downloadStore.loadSettings();
+  downloadDir.value = s.download_dir || downloadStore.settings.download_dir;
   asmrToken.value = s.asmr_one_token || "";
   proxyUrl.value = s.proxy_url || "";
   proxyDlsite.value = s.proxy_dlsite;
