@@ -1,6 +1,6 @@
 [package]
 name = "asmr-db"
-version = "2.2.0"
+version = "2.2.1"
 description = "ASMR DB 作品管理 Web 服务端"
 authors = ["Bunny"]
 edition = "2021"
