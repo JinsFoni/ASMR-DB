@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { RouterLink } from "vue-router";
 import { Check, ImageOff, Loader2, Pause, Play, Star } from "lucide-vue-next";
-import { imgUrl } from "../../lib/api";
+import { imgUrl, hasAsmroneAudio } from "../../lib/api";
 import type { WorkView } from "../../lib/types";
 
 const props = defineProps<{
@@ -43,7 +43,17 @@ const wishlistText = computed(() =>
   props.view.work.wishlist_count != null ? props.view.work.wishlist_count.toLocaleString() : ""
 );
 const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
-const hasAudio = computed(() => props.view.track_count > 0);
+
+/** 有音频可播：本地有音轨，或本地没有但 asmr.one 已收录（探测回退，与在线卡片同逻辑）。
+ *  HEAD 探测很轻且 api 层有 5 分钟缓存 + inflight 去重，逐卡发起可接受。 */
+const localAudio = computed(() => props.view.track_count > 0);
+const onlineAudio = ref(false);
+if (!localAudio.value && props.view.work.rj_code) {
+  hasAsmroneAudio(props.view.work.rj_code)
+    .then((has) => (onlineAudio.value = has))
+    .catch(() => {});
+}
+const hasAudio = computed(() => localAudio.value || onlineAudio.value);
 </script>
 
 <template>
@@ -83,7 +93,7 @@ const hasAudio = computed(() => props.view.track_count > 0);
         <Loader2 :size="10" class="animate-spin" /> 下载中
       </span>
 
-      <!-- 左下角：播放按钮（有本地音轨才显示） -->
+      <!-- 左下角：播放按钮（本地有音轨，或 asmr.one 已收录可在线播放） -->
       <button
         v-if="hasAudio && !selectMode"
         class="play-btn"

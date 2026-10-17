@@ -16,7 +16,8 @@ export function useCardPlay() {
   /** 正在拉取音轨的卡片 key（本地作品 id / 在线卡片 id） */
   const playingId = ref<string | number | null>(null);
 
-  /** 播放本地作品：恢复上次进度后交给全局播放器。key 为卡片侧的 loading 标识。 */
+  /** 播放本地作品：恢复上次进度后交给全局播放器。key 为卡片侧的 loading 标识。
+   *  本地无音轨时与在线卡片（playItem）同逻辑：回退按 RJ 号走 asmr.one 在线播放。 */
   async function playView(view: WorkView, key: number = view.work.id) {
     if (player.work?.work.id === view.work.id) {
       player.togglePlay();
@@ -24,19 +25,28 @@ export function useCardPlay() {
     }
     playingId.value = key;
     try {
-      const tracks = await api.listTracks(view.work.id);
-      if (!tracks.length) {
-        alert("本地未找到音频文件");
-        return;
-      }
+      let tracks = await api.listTracks(view.work.id);
       let startIndex = 0;
       let initialTime = 0;
-      const progress = await api.getPlayProgress(view.work.id).catch(() => null);
-      if (progress) {
-        const idx = tracks.findIndex((t) => t.id === progress.track_id);
-        if (idx >= 0) {
-          startIndex = idx;
-          initialTime = progress.last_position || 0;
+      if (!tracks.length) {
+        // 本地回退在线：先探测 asmr.one 收录（未收录保持原提示），有则拉在线音轨
+        if (!view.work.rj_code || !(await api.hasAsmroneAudio(view.work.rj_code))) {
+          alert("本地未找到音频文件");
+          return;
+        }
+        tracks = await api.listAsmroneTracks(view.work.rj_code);
+        if (!tracks.length) {
+          alert("asmr.one 未找到音频文件");
+          return;
+        }
+      } else {
+        const progress = await api.getPlayProgress(view.work.id).catch(() => null);
+        if (progress) {
+          const idx = tracks.findIndex((t) => t.id === progress.track_id);
+          if (idx >= 0) {
+            startIndex = idx;
+            initialTime = progress.last_position || 0;
+          }
         }
       }
       player.playFromWork(view, tracks, startIndex, initialTime);
