@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { Music, ExternalLink, Image as ImageIcon, FileText, File, Folder, ChevronDown, ChevronRight } from "lucide-vue-next";
 import type { Track, WorkView, AsmrTreeNode } from "../../lib/types";
 import { usePlayerStore } from "../../stores/player";
@@ -15,7 +14,6 @@ const props = defineProps<{
   tree?: AsmrTreeNode[] | null;
 }>();
 const player = usePlayerStore();
-const router = useRouter();
 
 const viewMode = ref<"audio" | "all">("audio");
 watch(
@@ -133,10 +131,9 @@ async function openWithPlayer(t: Track) {
   }
 }
 
-/** 播放指定音轨并进入全屏播放器页面。 */
+/** 播放指定音轨，交给全局播放器（MiniPlayer 出现，不跳转页面）。 */
 function playTrack(i: number) {
   player.playFromWork(props.work, props.tracks, i);
-  router.push({ name: "player" });
 }
 </script>
 

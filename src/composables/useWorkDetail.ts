@@ -502,7 +502,6 @@ export function useWorkDetail(opts: { source: DetailSource; id: Ref<string> }): 
       }
     }
     player.playFromWork(w, localTracks.value, startIndex, initialTime);
-    router.push({ name: "player" });
   }
 
   async function playOnline() {

@@ -28,7 +28,7 @@ export const usePlayerStore = defineStore("player", () => {
   const buffering = ref(false);
 
   // 字幕状态
-  const subtitleEnabled = ref(false); // 默认不显示
+  const subtitleEnabled = ref(true); // 默认显示字幕
   const subtitleCues = ref<{ start: number; end: number; text: string }[]>([]);
   const subtitleName = ref<string | null>(null);
   const subtitleLoading = ref(false);
