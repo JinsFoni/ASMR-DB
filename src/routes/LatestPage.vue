@@ -88,7 +88,8 @@ async function probeAudio(list: AsmrOnlineWork[], seq: number) {
 }
 
 /** 后台补齐卡片元数据（收藏数/评分/声优/发售日期，与在线页同一策略）：
- *  已入库作品直接取本地库（无外网请求），未入库的走 DLsite 统一预览接口（服务端短 TTL 缓存）。 */
+ *  已入库作品直接取本地库（无外网请求），未入库的走 DLsite 统一预览接口（服务端有 DB 缓存）。
+ *  未入库条目限流并发请求（串行 30 次往返要数秒），结果收集完批量写回，只重渲染一次。 */
 async function enrichMeta(list: AsmrOnlineWork[], seq: number) {
   // 本地库归一化成与 ScrapedWork 同形的补丁，两条路径共用一套合并逻辑
   const byRj = new Map(
@@ -106,33 +107,45 @@ async function enrichMeta(list: AsmrOnlineWork[], seq: number) {
         },
       ])
   );
+
+  // 待请求的条目（本地库没有的）限流并发拉取，收集成 item → meta 映射
+  const pending = list.filter((item) => item.rj_code && !byRj.has(item.rj_code.toUpperCase()));
+  const fetched = new Map<AsmrOnlineWork, NonNullable<ReturnType<typeof byRj.get>>>();
+  const CONCURRENCY = 8;
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, pending.length) }, async () => {
+      while (cursor < pending.length && seq === enrichSeq) {
+        const item = pending[cursor++];
+        try {
+          const s = await api.previewByRj(item.rj_code!.toUpperCase());
+          fetched.set(item, {
+            rating: s.rating,
+            wishlist_count: s.wishlist_count,
+            sale_date: s.sale_date,
+            actors: s.actors,
+            tags: s.tags,
+            duration_min: s.duration_min,
+          });
+        } catch {
+          // 抓取失败（如 DLsite 下架）保持列表页原值，静默降级
+        }
+      }
+    })
+  );
+
+  // 批量写回：本地库条目 + 外网拉取结果，一次赋值只触发一轮渲染
+  if (seq !== enrichSeq) return;
   for (const item of list) {
     if (!item.rj_code) continue;
-    const rj = item.rj_code.toUpperCase();
-    try {
-      let meta = byRj.get(rj);
-      if (!meta) {
-        const s = await api.previewByRj(rj);
-        if (seq !== enrichSeq) return;
-        meta = {
-          rating: s.rating,
-          wishlist_count: s.wishlist_count,
-          sale_date: s.sale_date,
-          actors: s.actors,
-          tags: s.tags,
-          duration_min: s.duration_min,
-        };
-      }
-      if (seq !== enrichSeq) return;
-      if (meta.rating != null) item.rating = meta.rating;
-      if (meta.wishlist_count != null) item.wishlist_count = meta.wishlist_count;
-      if (meta.sale_date) item.release = meta.sale_date;
-      if (meta.actors.length) item.vas = meta.actors;
-      if (meta.tags.length) item.tags = meta.tags;
-      if (meta.duration_min) item.duration_sec = meta.duration_min * 60;
-    } catch {
-      // 抓取失败（如 DLsite 下架）保持列表页原值，静默降级
-    }
+    const meta = byRj.get(item.rj_code.toUpperCase()) ?? fetched.get(item);
+    if (!meta) continue;
+    if (meta.rating != null) item.rating = meta.rating;
+    if (meta.wishlist_count != null) item.wishlist_count = meta.wishlist_count;
+    if (meta.sale_date) item.release = meta.sale_date;
+    if (meta.actors.length) item.vas = meta.actors;
+    if (meta.tags.length) item.tags = meta.tags;
+    if (meta.duration_min) item.duration_sec = meta.duration_min * 60;
   }
 }
 

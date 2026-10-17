@@ -62,15 +62,18 @@ type CacheEntry = { value: unknown; expiresAt: number };
 const cacheMap = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<unknown>>();
 const TTL_MS = 60_000;
+/** 外网型详情/预览（ext: 前缀）：与后端预览缓存 TTL 对齐到 5 分钟，翻回列表不用重发 */
+const EXT_TTL_MS = 300_000;
 
 async function cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const ttlMs = key.startsWith("ext:") ? EXT_TTL_MS : TTL_MS;
   const hit = cacheMap.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.value as T;
   const running = inflight.get(key);
   if (running) return running as Promise<T>;
   const p = fetcher()
     .then((v) => {
-      cacheMap.set(key, { value: v, expiresAt: Date.now() + TTL_MS });
+      cacheMap.set(key, { value: v, expiresAt: Date.now() + ttlMs });
       return v;
     })
     .finally(() => inflight.delete(key));
