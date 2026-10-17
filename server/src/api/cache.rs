@@ -188,6 +188,13 @@ pub mod dlsitecache {
         static C: OnceLock<TtlCache<AsmrWorksPage>> = OnceLock::new();
         C.get_or_init(|| TtlCache::new(Duration::from_secs(300)))
     }
+
+    /// asmr.one 在线页列表（popular/全部的确定性排序；random 推荐不进缓存），5 分钟。
+    /// DB 层 web_cache 提供 1 小时保鲜 + 失败回退旧快照，见 handlers/asmr.rs browse。
+    pub fn browse_page() -> &'static TtlCache<AsmrWorksPage> {
+        static C: OnceLock<TtlCache<AsmrWorksPage>> = OnceLock::new();
+        C.get_or_init(|| TtlCache::new(Duration::from_secs(300)))
+    }
 }
 
 #[cfg(test)]

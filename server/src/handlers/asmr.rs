@@ -129,12 +129,92 @@ pub async fn browse(
     };
     let page = q.page.unwrap_or(1).max(1);
     let ctx = get_asmr_ctx(&state).await?;
-    let (api_base, proxy) = (ctx.api_base.clone(), ctx.proxy.clone());
-    let page_data =
-        run_with_relogin(&state, move |token: &str| {
-            asmr_online::fetch_works_page(&api_base, token, &proxy, page, order)
+
+    // recommend 是随机发现，缓存会把随机结果冻住，直接回源；其余排序读穿
+    // 内存 5 分钟 → web_cache（1 小时新鲜度）→ asmr.one 回源写回，
+    // 回源失败回退 DB 旧快照。缓存的是 asmr.one 原始列表，
+    // local_work_id / 收藏标注在后面每次重算，不受缓存影响。
+    const BROWSE_MAX_AGE_SECS: i64 = 3600;
+    let page_data = if order == "random" {
+        run_with_relogin(&state, {
+            let api_base = ctx.api_base.clone();
+            let proxy = ctx.proxy.clone();
+            move |token: &str| asmr_online::fetch_works_page(&api_base, token, &proxy, page, "random")
         })
-        .await?;
+        .await?
+    } else {
+        let cache_key = format!("asmr:browse:{order}:p{page}");
+        crate::api::cache::dlsitecache::browse_page()
+            .get_or_fetch(&format!("order:{order}:page:{page}"), {
+                let state = state.clone();
+                let api_base = ctx.api_base.clone();
+                let proxy = ctx.proxy.clone();
+                let cache_key = cache_key.clone();
+                move || async move {
+                    // 内存未命中 → 查 DB（1 小时内的条目才算命中）
+                    let from_db = tokio::task::spawn_blocking({
+                        let state = state.clone();
+                        let cache_key = cache_key.clone();
+                        move || -> Option<asmr_online::AsmrWorksPage> {
+                            let conn = state.db.get().ok()?;
+                            queries::web_cache_get_fresh(&conn, &cache_key, BROWSE_MAX_AGE_SECS)
+                                .ok()
+                                .flatten()
+                        }
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    if let Some(p) = from_db {
+                        return Ok(p);
+                    }
+                    // DB 没有（或超过 1 小时新鲜度）→ asmr.one 回源，成功后写回 DB；
+                    // 回源失败时回退返回 DB 里的旧快照（如有），避免整页报错
+                    let fetched = run_with_relogin(&state, {
+                        let api_base = api_base.clone();
+                        let proxy = proxy.clone();
+                        move |token: &str| {
+                            asmr_online::fetch_works_page(&api_base, token, &proxy, page, order)
+                        }
+                    })
+                    .await;
+                    match &fetched {
+                        Ok(p) => {
+                            let _ = tokio::task::spawn_blocking({
+                                let state = state.clone();
+                                let cache_key = cache_key.clone();
+                                let p = p.clone();
+                                move || {
+                                    if let Ok(conn) = state.db.get() {
+                                        let _ = queries::web_cache_put(&conn, &cache_key, &p);
+                                    }
+                                }
+                            })
+                            .await;
+                        }
+                        Err(_) => {
+                            let stale = tokio::task::spawn_blocking({
+                                let state = state.clone();
+                                let cache_key = cache_key.clone();
+                                move || -> Option<asmr_online::AsmrWorksPage> {
+                                    let conn = state.db.get().ok()?;
+                                    queries::web_cache_get(&conn, &cache_key).ok().flatten()
+                                }
+                            })
+                            .await
+                            .ok()
+                            .flatten();
+                            if let Some(p) = stale {
+                                return Ok(p);
+                            }
+                        }
+                    }
+                    fetched.map_err(|e| e.0)
+                }
+            })
+            .await
+            .map_err(AppError::new)?
+    };
+
     let items = annotate_local(&state, page_data.items).await?;
     let items = annotate_marked(&state, items).await?;
     Ok(Json(json!({

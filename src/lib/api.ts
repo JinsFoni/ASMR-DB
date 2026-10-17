@@ -555,13 +555,18 @@ export function openFolder(path: string): Promise<void> {
 
 // ---------- ASMR ONE 在线浏览 ----------
 
-/** tab: popular（热门）| recommend（推荐）| all（全部，order 可选 release/dl_count/rating） */
+/** tab: popular（热门）| recommend（推荐，随机，不缓存）| all（全部，order 可选 release/dl_count/rating）。
+ *  recommend 之外走 5 分钟前端缓存（ext: 前缀），切 tab / 返回列表瞬时响应。 */
 export function asmrBrowse(
   tab: string,
   page: number,
   order?: string
 ): Promise<AsmrWorksPage> {
-  return get(`/api/asmr/browse${qs({ tab, page, order })}`);
+  if (tab === "recommend") return get(`/api/asmr/browse${qs({ tab, page, order })}`);
+  return cached(
+    `ext:asmr-browse:${tab}:${order ?? ""}:p${page}`,
+    () => get(`/api/asmr/browse${qs({ tab, page, order })}`)
+  );
 }
 
 /** 账号数据：tab=favorite|playlist|history；playlist 需要时传播放列表 id */
