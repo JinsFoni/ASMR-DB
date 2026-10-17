@@ -72,7 +72,7 @@ function toggleFavorite() {
       />
       <img v-else :src="DEFAULT_COVER" :alt="title" class="default-cover" />
 
-      <!-- 左上角：收藏到 asmr.one 账号 -->
+      <!-- 左上角：收藏到 asmr.one 账号（已收藏常显；未收藏悬浮卡片时才出现） -->
       <button
         v-if="item.id"
         class="fav-btn"
@@ -205,8 +205,13 @@ function toggleFavorite() {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
-  transition: background 0.15s, transform 0.15s;
+  transition: background 0.15s, transform 0.15s, opacity 0.15s;
   z-index: 2;
+  /* 未收藏：悬浮卡片时才出现（已收藏 .on 常显） */
+  opacity: 0;
+}
+.oc:hover .fav-btn {
+  opacity: 1;
 }
 .fav-btn:hover {
   background: var(--blue);
@@ -214,6 +219,7 @@ function toggleFavorite() {
 }
 .fav-btn.on {
   background: rgba(72, 72, 80, 0.78);
+  opacity: 1;
 }
 .fav-btn.on .fav-ico {
   color: #ff375f;
