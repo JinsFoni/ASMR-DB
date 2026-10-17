@@ -56,9 +56,8 @@ function cycleLoop() {
     player.loopMode === "none" ? "all" : player.loopMode === "all" ? "one" : "none";
 }
 
-/** 回到全屏播放器页：先退出悬浮模式，底部栏在播放器页本来就不显示 */
+/** 回到全屏播放器页：保留悬浮模式，全屏页本身两种形态都不渲染，退出后回到悬浮播放器 */
 function goFullscreen() {
-  player.setFloatMode(false);
   router.push({ name: "player" });
 }</script>
 
