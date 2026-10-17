@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import {
   Play,
   Pause,
@@ -11,9 +11,9 @@ import {
   Repeat,
   Repeat1,
   Loader2,
-  PictureInPicture2,
+  Maximize2,
+  PanelBottom,
   ImageOff,
-  X,
 } from "lucide-vue-next";
 import { usePlayerStore } from "../../stores/player";
 import { imgUrl } from "../../lib/api";
@@ -24,6 +24,7 @@ import { imgUrl } from "../../lib/api";
  */
 const player = usePlayerStore();
 const router = useRouter();
+const route = useRoute();
 
 const coverUrl = computed(() => imgUrl(player.work?.work.cover_url) || "");
 const trackTitle = computed(() => player.currentTrack?.title || "");
@@ -59,17 +60,11 @@ function cycleLoop() {
 function goFullscreen() {
   player.setFloatMode(false);
   router.push({ name: "player" });
-}
-</script>
+}</script>
 
 <template>
-  <aside v-if="player.visible" class="fplayer glass">
-    <!-- 收起（仅保留封面，展开按钮覆盖其上） -->
-    <button class="fp-close" title="收起悬浮播放器（回到底部播放栏）" @click="player.setFloatMode(false)">
-      <X :size="13" />
-    </button>
-
-    <!-- 封面 -->
+  <aside v-if="player.visible && player.floatMode && route.name !== 'player'" class="fplayer glass">
+    <!-- 封面：原图比例，不裁切 -->
     <div class="fp-art">
       <img v-if="coverUrl" :src="coverUrl" alt="" />
       <div v-else class="fp-art-empty">
@@ -86,7 +81,7 @@ function goFullscreen() {
       <span :title="workTitle">{{ workTitle }}</span>
     </div>
 
-    <!-- 字幕行 -->
+    <!-- 字幕行：固定 2 行高度，1 行时也不改变卡片高度 -->
     <p v-if="player.subtitleCues.length" class="fp-sub">{{ player.subtitleText }}</p>
 
     <!-- 进度 -->
@@ -123,11 +118,17 @@ function goFullscreen() {
       </button>
     </div>
 
-    <!-- 回到全屏播放器页 -->
-    <button class="fp-expand" title="全屏播放器（字幕）" @click="goFullscreen()">
-      <PictureInPicture2 :size="13" />
-      <span>全屏播放器</span>
-    </button>
+    <!-- 底部操作：左下角切回底部播放栏，右下角进全屏播放器页 -->
+    <div class="fp-actions">
+      <button class="fp-action" title="切回底部播放栏" @click="player.setFloatMode(false)">
+        <PanelBottom :size="13" />
+        <span>底部播放栏</span>
+      </button>
+      <button class="fp-action" title="全屏播放器（字幕）" @click="goFullscreen()">
+        <Maximize2 :size="13" />
+        <span>全屏播放器</span>
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -193,11 +194,10 @@ html[data-theme="sakura"] .fplayer {
   color: var(--label);
 }
 
-/* 封面：方形圆角 + 播放中呼吸均衡条 */
+/* 封面：保持原图比例（不裁切），宽度撑满卡片 */
 .fp-art {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
   border-radius: 14px;
   overflow: hidden;
   background: var(--fill-2);
@@ -205,12 +205,12 @@ html[data-theme="sakura"] .fplayer {
 }
 .fp-art img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
+  display: block;
 }
 .fp-art-empty {
   width: 100%;
-  height: 100%;
+  aspect-ratio: 1;
   display: grid;
   place-items: center;
   color: var(--label-3);
@@ -266,14 +266,14 @@ html[data-theme="sakura"] .fplayer {
   text-overflow: ellipsis;
 }
 
-/* 字幕行 */
+/* 字幕行：始终占 2 行高度，避免字幕换行时卡片高度跳变 */
 .fp-sub {
   width: 100%;
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--label-2);
   text-align: center;
-  max-height: 3em;
+  height: 3em;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -360,8 +360,14 @@ html[data-theme="sakura"] .fplayer {
   color: #fff;
 }
 
-/* 全屏播放器入口 */
-.fp-expand {
+/* 底部双操作：左右分布 */
+.fp-actions {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.fp-action {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -376,7 +382,7 @@ html[data-theme="sakura"] .fplayer {
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.fp-expand:hover {
+.fp-action:hover {
   background: var(--fill-3);
   color: var(--label);
 }

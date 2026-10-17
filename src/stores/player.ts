@@ -38,11 +38,11 @@ export const usePlayerStore = defineStore("player", () => {
   const desktopSubtitleEnabled = ref(false);
   let desktopSubtitleTimer: number | null = null;
 
-  // 播放器形态：dock = 底部播放栏，float = 右侧悬浮播放器（记忆上次选择）
-  const floatMode = ref(localStorage.getItem("player_float_mode") === "1");
+  // 播放器形态：dock = 底部播放栏，float = 右侧悬浮播放器。
+  // 每次进入默认底部播放栏，仅本次会话内切换（不跨刷新记忆）
+  const floatMode = ref(false);
   function setFloatMode(v: boolean) {
     floatMode.value = v;
-    localStorage.setItem("player_float_mode", v ? "1" : "0");
   }
   function toggleFloatMode() {
     setFloatMode(!floatMode.value);
