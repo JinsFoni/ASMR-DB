@@ -198,7 +198,7 @@ function toggleFavorite() {
   height: 28px;
   border: none;
   border-radius: 999px;
-  background: rgba(20, 20, 24, 0.78);
+  background: rgba(72, 72, 80, 0.78);
   color: #fff;
   cursor: pointer;
   display: inline-flex;
@@ -213,7 +213,7 @@ function toggleFavorite() {
   transform: scale(1.08);
 }
 .fav-btn.on {
-  background: rgba(20, 20, 24, 0.78);
+  background: rgba(72, 72, 80, 0.78);
 }
 .fav-btn.on .fav-ico {
   color: #ff375f;
@@ -224,7 +224,7 @@ function toggleFavorite() {
   height: 28px;
   border: none;
   border-radius: 999px;
-  background: rgba(20, 20, 24, 0.78);
+  background: rgba(72, 72, 80, 0.78);
   color: #fff;
   cursor: pointer;
   display: inline-flex;

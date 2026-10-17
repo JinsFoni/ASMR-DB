@@ -192,7 +192,7 @@ const hasAudio = computed(() => props.view.track_count > 0);
   height: 28px;
   border: none;
   border-radius: 999px;
-  background: rgba(20, 20, 24, 0.78);
+  background: rgba(72, 72, 80, 0.78);
   color: #fff;
   cursor: pointer;
   display: inline-flex;
