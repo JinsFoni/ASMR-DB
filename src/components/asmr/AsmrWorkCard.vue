@@ -177,7 +177,9 @@ function toggleFavorite() {
   font-size: 10.5px;
   font-weight: 700;
   color: #1c7c2e;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 999px;
   padding: 3px 9px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
@@ -247,10 +249,12 @@ function toggleFavorite() {
   font-size: 10.5px;
   font-weight: 700;
   color: #333;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 999px;
   padding: 3px 9px;
-  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px rgba(255, 255, 255, 0.4);
 }
 .oc h3 {
   font-size: 13.5px;
@@ -321,7 +325,9 @@ function toggleFavorite() {
   font-size: 11px;
   font-weight: 700;
   color: #333;
-  background: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 999px;
   padding: 3px 8px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
