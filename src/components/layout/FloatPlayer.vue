@@ -133,12 +133,24 @@ function goFullscreen() {
 
 <style scoped>
 .fplayer {
+  --fp-w: 260px;
   position: fixed;
-  /* 与页面内容容器（padding 28px）同一网格线：补上 app-main 的滚动条占位宽度 */
-  right: calc(28px + var(--app-scrollbar-w, 0px));
-  bottom: 88px;
+  /* 右侧垂直居中 */
+  top: 50%;
+  transform: translateY(-50%);
+  /* 水平居中于「内容网格右缘 ↔ 浏览器窗口右缘」的空带，两侧留白相等：
+     内容容器 min(1280px, 视口-滚动条槽) 居中，网格右缘距窗口右缘
+     (100vw-1280px)/2 + 槽宽/2 + 28px，卡片在该空带内对半分；
+     空带放不下卡片时退回与内容网格右缘对齐 */
+  right: max(
+    calc(var(--app-scrollbar-w, 0px) + 28px),
+    calc(
+      (100vw - 1280px) / 4 + var(--app-scrollbar-w, 0px) / 4 + 14px -
+        var(--fp-w) / 2
+    )
+  );
   z-index: 70;
-  width: 260px;
+  width: var(--fp-w);
   border-radius: 22px;
   box-shadow:
     0 24px 60px -16px rgba(0, 0, 0, 0.8),
