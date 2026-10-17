@@ -247,7 +247,8 @@ export function listAsmroneTracks(rjCode: string): Promise<Track[]> {
 export function hasAsmroneAudio(rjCode: string): Promise<boolean> {
   const key = `ext:asmr-has-audio:${rjCode.toUpperCase()}`;
   const hit = cacheMap.get(key);
-  if (hit && hit.expiresAt > Date.now()) return hit.value as Promise<boolean>;
+  // 缓存存的是布尔值而非 Promise，必须包成 Promise 返回（调用方可能 .then 链式）
+  if (hit && hit.expiresAt > Date.now()) return Promise.resolve(hit.value as boolean);
   const running = inflight.get(key);
   if (running) return running as Promise<boolean>;
   const p = fetch(`/api/asmr/tracks${qs({ rj: rjCode })}`, { method: "HEAD" })

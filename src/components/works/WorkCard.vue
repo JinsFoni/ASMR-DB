@@ -49,7 +49,7 @@ const coverSrc = computed(() => imgUrl(props.view.work.cover_url));
 const localAudio = computed(() => props.view.track_count > 0);
 const onlineAudio = ref(false);
 if (!localAudio.value && props.view.work.rj_code) {
-  hasAsmroneAudio(props.view.work.rj_code)
+  Promise.resolve(hasAsmroneAudio(props.view.work.rj_code))
     .then((has) => (onlineAudio.value = has))
     .catch(() => {});
 }
