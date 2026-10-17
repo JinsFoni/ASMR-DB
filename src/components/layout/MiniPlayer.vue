@@ -58,7 +58,8 @@ function cycleLoop() {
   >
     <!-- 封面 + 播放控制 -->
     <div class="np">
-      <div class="np-art overflow-hidden">
+      <!-- 点封面进全屏播放器页 -->
+      <div class="np-art overflow-hidden cursor-pointer" title="打开全屏播放器" @click="router.push({ name: 'player' })">
         <img
           v-if="player.work?.work.cover_url"
           :src="imgUrl(player.work.work.cover_url)"
