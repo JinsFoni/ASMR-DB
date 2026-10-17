@@ -228,6 +228,8 @@ pub fn fetch_works_page(
 }
 
 /// 收藏（登录用户评分/收藏的作品）。
+/// order=updated_at&sort=desc：按收藏/标记操作时间倒序，最新收藏排在最前
+/// （order=release 是按作品发售日排，刚收藏的会沉底）。
 pub fn fetch_favorites(
     api_base: &str,
     token: &str,
@@ -235,7 +237,7 @@ pub fn fetch_favorites(
     page: i64,
 ) -> Result<AsmrWorksPage, String> {
     let client = build_client(proxy)?;
-    let url = format!("{api_base}/api/review?page={page}&order=release&sort=desc");
+    let url = format!("{api_base}/api/review?page={page}&order=updated_at&sort=desc");
     let d = get_json(&client, &url, token)?;
     Ok(parse_works_page(&d, page))
 }
