@@ -11,7 +11,7 @@ import {
   Repeat,
   Repeat1,
   Loader2,
-  Expand,
+  PictureInPicture2,
   ImageOff,
 } from "lucide-vue-next";
 import { usePlayerStore } from "../../stores/player";
@@ -53,7 +53,7 @@ function cycleLoop() {
 
 <template>
   <footer
-    v-if="player.visible && route.name !== 'player'"
+    v-if="player.visible && route.name !== 'player' && !player.floatMode"
     class="player-dock glass"
   >
     <!-- 封面 + 播放控制 -->
@@ -139,8 +139,12 @@ function cycleLoop() {
         />
       </div>
 
-      <button class="pctrl" title="全屏播放器（字幕）" @click="router.push({ name: 'player' })">
-        <Expand :size="16" />
+      <button
+        class="pctrl"
+        :title="player.floatMode ? '切回底部播放栏' : '切换到悬浮播放器'"
+        @click="player.toggleFloatMode()"
+      >
+        <PictureInPicture2 :size="16" />
       </button>
     </div>
   </footer>

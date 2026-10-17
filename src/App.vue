@@ -3,6 +3,7 @@ import { onMounted, onBeforeUnmount, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
 import NavBar from "./components/layout/NavBar.vue";
 import MiniPlayer from "./components/layout/MiniPlayer.vue";
+import FloatPlayer from "./components/layout/FloatPlayer.vue";
 import ToastHost from "./components/common/ToastHost.vue";
 import { useWorksStore } from "./stores/works";
 import { useDownloadStore } from "./stores/download";
@@ -122,6 +123,7 @@ onUnmounted(() => {
         </router-view>
       </main>
       <MiniPlayer />
+      <FloatPlayer />
       <ToastHost />
     </template>
     <router-view v-else />
