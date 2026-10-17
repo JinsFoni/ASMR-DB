@@ -44,6 +44,37 @@ where
     }
 }
 
+/// 为在线条目标注收藏状态：列表接口不返回 progress/userRating，纯收藏（仅打
+/// "想听"标记不打分）在列表响应里无从判定，用全量收藏 id 集合（短 TTL 缓存）补标。
+/// 已带 user_marked=true 的条目不动（详情/收藏列表接口本身携带真实状态）。
+async fn annotate_marked(
+    state: &SharedState,
+    mut items: Vec<AsmrOnlineWork>,
+) -> Result<Vec<AsmrOnlineWork>, AppError> {
+    let any_unknown = items.iter().any(|it| !it.user_marked);
+    if !any_unknown {
+        return Ok(items);
+    }
+    let ctx = get_asmr_ctx(state).await?;
+    let (api_base, proxy, token) = (ctx.api_base.clone(), ctx.proxy.clone(), ctx.token.clone());
+    let ids = crate::api::cache::asmrcache::asmr_favorite_ids()
+        .get_or_fetch("all", move || async move {
+            tokio::task::spawn_blocking(move || {
+                asmr_online::fetch_favorite_ids(&api_base, &token, &proxy)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+        })
+        .await
+        .map_err(AppError::new)?;
+    for it in items.iter_mut() {
+        if !it.user_marked && ids.contains(&it.id) {
+            it.user_marked = true;
+        }
+    }
+    Ok(items)
+}
+
 /// 为在线条目标注本地已入库作品 id（按 RJ 号匹配，供前端显示已入库标识与跳转）。
 /// dlsite latest 等其他在线列表也复用。
 pub async fn annotate_local_pub(
@@ -105,6 +136,7 @@ pub async fn browse(
         })
         .await?;
     let items = annotate_local(&state, page_data.items).await?;
+    let items = annotate_marked(&state, items).await?;
     Ok(Json(json!({
         "type": "works",
         "items": items,
@@ -264,5 +296,7 @@ pub async fn set_favorite(
         }
     })
     .await?;
+    // 写穿：收藏集合已变化，清掉缓存让下一次列表标注拿到新状态
+    crate::api::cache::asmrcache::asmr_favorite_ids().invalidate("all");
     Ok(Json(json!({ "ok": true, "message": message })))
 }

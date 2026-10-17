@@ -79,6 +79,12 @@ impl<V: Clone + Send + Sync + 'static> TtlCache<V> {
     }
 
     /// 取值：命中新鲜缓存直接返回；否则回源（同 key 并发请求合并为一次）。
+    /// 主动失效（写后清缓存用）：清掉该 key 的缓存与在翔回源。
+    pub fn invalidate(&self, key: &str) {
+        self.map.lock().unwrap().remove(key);
+        self.inflight.lock().unwrap().remove(key);
+    }
+
     pub async fn get_or_fetch<F, Fut>(&self, key: &str, fetch: F) -> Result<V, String>
     where
         F: FnOnce() -> Fut,
@@ -159,6 +165,14 @@ pub mod asmrcache {
     pub fn dlsite_rating() -> &'static TtlCache<Option<f64>> {
         static C: OnceLock<TtlCache<Option<f64>>> = OnceLock::new();
         C.get_or_init(|| cache(Duration::from_secs(600)))
+    }
+
+    /// asmr.one 全量收藏作品 id 集合（key 固定，单条目），2 分钟。
+    /// 列表接口不返回收藏状态，browse 列表靠这个集合标注 user_marked；
+    /// 收藏/取消收藏成功后由调用方直接清空（写穿语义，不受 TTL 影响）。
+    pub fn asmr_favorite_ids() -> &'static TtlCache<std::collections::HashSet<i64>> {
+        static C: OnceLock<TtlCache<std::collections::HashSet<i64>>> = OnceLock::new();
+        C.get_or_init(|| cache(Duration::from_secs(120)))
     }
 }
 

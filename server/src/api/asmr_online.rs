@@ -240,6 +240,35 @@ pub fn fetch_favorites(
     Ok(parse_works_page(&d, page))
 }
 
+/// 全量收藏作品 id 集合（翻完 /api/review 所有页，上限 100 页防失控）。
+/// 列表接口（/api/works）不返回 progress / userRating，纯收藏（仅打标记不打分）
+/// 在列表响应里无从判定，只能拿收藏集合来标注 user_marked。
+pub fn fetch_favorite_ids(
+    api_base: &str,
+    token: &str,
+    proxy: &ProxyConfig,
+) -> Result<std::collections::HashSet<i64>, String> {
+    let client = build_client(proxy)?;
+    let mut ids = std::collections::HashSet::new();
+    for page in 1..=100 {
+        let url = format!("{api_base}/api/review?page={page}&order=release&sort=desc");
+        let d = get_json(&client, &url, token)?;
+        let works = d
+            .get("works")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| "收藏列表响应异常".to_string())?;
+        for w in works {
+            if let Some(id) = w.get("id").and_then(|x| x.as_i64()) {
+                ids.insert(id);
+            }
+        }
+        if !has_next_from(d.get("pagination")) {
+            break;
+        }
+    }
+    Ok(ids)
+}
+
 /// 收藏/标记作品（asmr.one 语义：progress="marked" 想听；rating 传 null 仅收藏不打分）。
 /// 端点：PUT /api/review {work_id, rating, review_text, progress}。
 pub fn add_favorite(
