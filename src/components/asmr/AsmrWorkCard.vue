@@ -176,8 +176,8 @@ function toggleFavorite() {
   gap: 4px;
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--green);
-  background: rgba(20, 20, 24, 0.78);
+  color: #1c7c2e;
+  background: rgba(255, 255, 255, 0.86);
   border-radius: 999px;
   padding: 3px 9px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
@@ -246,11 +246,11 @@ function toggleFavorite() {
   gap: 4px;
   font-size: 10.5px;
   font-weight: 700;
-  color: #fff;
-  background: rgba(24, 24, 28, 0.82);
+  color: #333;
+  background: rgba(255, 255, 255, 0.86);
   border-radius: 999px;
   padding: 3px 9px;
-  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px rgba(0, 0, 0, 0.12);
 }
 .oc h3 {
   font-size: 13.5px;
@@ -320,8 +320,8 @@ function toggleFavorite() {
   gap: 3px;
   font-size: 11px;
   font-weight: 700;
-  color: #fff;
-  background: rgba(20, 20, 24, 0.78);
+  color: #333;
+  background: rgba(255, 255, 255, 0.86);
   border-radius: 999px;
   padding: 3px 8px;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
