@@ -146,7 +146,9 @@ function goFullscreen() {
   );
   position: fixed;
   right: var(--fp-gap);
-  bottom: var(--fp-gap);
+  /* 右边距里含滚动条槽（视觉上是"轨道"不算空白），下边距减去同样宽度，
+     让卡片到滚动条 / 到下缘的两段空白看起来相等 */
+  bottom: calc(var(--fp-gap) - var(--app-scrollbar-w, 0px));
   z-index: 70;
   width: var(--fp-w);
   border-radius: 22px;
