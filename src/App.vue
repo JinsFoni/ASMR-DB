@@ -52,6 +52,13 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  // 滚动条宽度写入 CSS 变量：悬浮播放器用它对齐内容网格（scrollbar-gutter 占位不计入 clientWidth）
+  const main = document.querySelector<HTMLElement>(".app-main");
+  if (main) {
+    const sbw = main.offsetWidth - main.clientWidth;
+    document.documentElement.style.setProperty("--app-scrollbar-w", `${sbw}px`);
+  }
+
   // 从数据库读取最新设置并同步主题
   try {
     const s = await api.getSettings();

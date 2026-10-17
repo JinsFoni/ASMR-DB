@@ -134,7 +134,8 @@ function goFullscreen() {
 <style scoped>
 .fplayer {
   position: fixed;
-  right: 20px;
+  /* 与页面内容容器（padding 28px）同一网格线：补上 app-main 的滚动条占位宽度 */
+  right: calc(28px + var(--app-scrollbar-w, 0px));
   bottom: 88px;
   z-index: 70;
   width: 260px;
