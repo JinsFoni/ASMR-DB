@@ -198,13 +198,13 @@ function toggleFavorite() {
   height: 28px;
   border: none;
   border-radius: 999px;
-  background: rgba(72, 72, 80, 0.78);
+  background: transparent;
   color: #fff;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
   transition: background 0.15s, transform 0.15s, opacity 0.15s;
   z-index: 2;
   /* 未收藏：悬浮卡片时才出现（已收藏 .on 常显） */
@@ -218,7 +218,7 @@ function toggleFavorite() {
   transform: scale(1.08);
 }
 .fav-btn.on {
-  background: rgba(72, 72, 80, 0.78);
+  background: transparent;
   opacity: 1;
 }
 .fav-btn.on .fav-ico {
