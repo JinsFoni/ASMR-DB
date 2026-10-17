@@ -153,9 +153,11 @@ pub async fn get_latest(
     .await
     .map_err(AppError::new)??;
 
-    // 读穿两层：内存 5 分钟 → web_cache 表 30 天滑动 TTL → DLsite 回源写回两级。
-    // 列表页数据在"最新页"语境下 30 天内基本稳定（同一页的发售日排序不变），
-    // 长缓存的收益是重启/次日访问毫秒级返回；local_work_id 标注每次重算，不受缓存影响。
+    // 读穿两层：内存 5 分钟 → web_cache 表（30 天滑动 TTL 保底删除，1 小时新鲜度）
+    // → DLsite 回源写回。长缓存让重启/次日访问毫秒级返回，但"最新"内容不能一直
+    // 是旧快照——DB 条目超过 LATEST_MAX_AGE_SECS 就视为未命中，回源刷新。
+    // local_work_id 标注每次重算，不受缓存影响。
+    const LATEST_MAX_AGE_SECS: i64 = 3600;
     let cache_key = format!("dlsite:latest:{order}:p{page}");
     let page_data = crate::api::cache::dlsitecache::latest_page()
         .get_or_fetch(&format!("order:{order}:page:{page}"), {
@@ -163,13 +165,15 @@ pub async fn get_latest(
             let proxy = proxy.clone();
             let cache_key = cache_key.clone();
             move || async move {
-                // 内存未命中 → 查 DB（30 天滑动 TTL）
+                // 内存未命中 → 查 DB（1 小时内的条目才算命中）
                 let from_db = tokio::task::spawn_blocking({
                     let state = state.clone();
                     let cache_key = cache_key.clone();
                     move || -> Option<AsmrWorksPage> {
                         let conn = state.db.get().ok()?;
-                        db::queries::web_cache_get(&conn, &cache_key).ok().flatten()
+                        db::queries::web_cache_get_fresh(&conn, &cache_key, LATEST_MAX_AGE_SECS)
+                            .ok()
+                            .flatten()
                     }
                 })
                 .await
@@ -177,23 +181,44 @@ pub async fn get_latest(
                 if let Some(p) = from_db {
                     return Ok(p);
                 }
-                // DB 没有 → DLsite 回源，成功后写回 DB
+                // DB 没有（或超过 1 小时新鲜度）→ DLsite 回源，成功后写回 DB；
+                // 回源失败时回退返回 DB 里的旧快照（如有），避免整页报错
                 let fetched = tokio::task::spawn_blocking(move || {
                     crate::api::dlsite_latest::fetch_latest_page(&proxy, &order, page)
                 })
                 .await
                 .map_err(|e| e.to_string())?;
-                if let Ok(p) = &fetched {
-                    let _ = tokio::task::spawn_blocking({
-                        let state = state.clone();
-                        let p = p.clone();
-                        move || {
-                            if let Ok(conn) = state.db.get() {
-                                let _ = db::queries::web_cache_put(&conn, &cache_key, &p);
+                match &fetched {
+                    Ok(p) => {
+                        let _ = tokio::task::spawn_blocking({
+                            let state = state.clone();
+                            let p = p.clone();
+                            move || {
+                                if let Ok(conn) = state.db.get() {
+                                    let _ = db::queries::web_cache_put(&conn, &cache_key, &p);
+                                }
                             }
+                        })
+                        .await;
+                    }
+                    Err(_) => {
+                        let stale = tokio::task::spawn_blocking({
+                            let state = state.clone();
+                            let cache_key = cache_key.clone();
+                            move || -> Option<AsmrWorksPage> {
+                                let conn = state.db.get().ok()?;
+                                db::queries::web_cache_get(&conn, &cache_key)
+                                    .ok()
+                                    .flatten()
+                            }
+                        })
+                        .await
+                        .ok()
+                        .flatten();
+                        if let Some(p) = stale {
+                            return Ok(p);
                         }
-                    })
-                    .await;
+                    }
                 }
                 fetched
             }

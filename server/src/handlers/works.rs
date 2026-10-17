@@ -446,7 +446,8 @@ pub struct AsmrRjQuery {
 /// HEAD 存在性探测：asmr.one 是否收录该作品且有可播放音频。
 /// 读穿两层：web_cache 表 30 天滑动 TTL（key: has_audio:RJ）→ asmr.one 回源写回。
 /// 成功且至少一条可播返回 200（缓存 true）；未收录/无音频返回 404（缓存 false，
-/// 避免列表页每次加载都对全部未收录作品打一遍外网）。
+/// 避免列表页每次加载都对全部未收录作品打一遍外网，负结果由 cleanup 按 3 天窗口删除）。
+/// 回源请求本身失败（网络抖动/外站宕机）时不确定结果，不写缓存，下次再探测。
 pub async fn head_asmrone_tracks(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
@@ -466,12 +467,12 @@ pub async fn head_asmrone_tracks(
     if let Some(has) = cached {
         return if has { StatusCode::OK } else { StatusCode::NOT_FOUND };
     }
-    let has = match fetch_asmr_tracks_json(&state, &q.rj).await {
-        Ok(v) => crate::api::asmrone::collect_tracks_and_subtitles(&v)
-            .iter()
-            .any(|f| !f.stream_url.trim().is_empty()),
-        Err(_) => false,
+    let Ok(v) = fetch_asmr_tracks_json(&state, &q.rj).await else {
+        return StatusCode::NOT_FOUND;
     };
+    let has = crate::api::asmrone::collect_tracks_and_subtitles(&v)
+        .iter()
+        .any(|f| !f.stream_url.trim().is_empty());
     let _ = tokio::task::spawn_blocking({
         let state = state.clone();
         move || {

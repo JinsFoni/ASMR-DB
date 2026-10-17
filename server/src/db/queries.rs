@@ -999,6 +999,10 @@ pub fn put_work_meta(conn: &Connection, w: &ScrapedWork, source: &str) -> Result
 /// web_cache 滑动 TTL 时长：命中即续期，30 天未访问的条目由 web_cache_cleanup 删除。
 pub const WEB_CACHE_TTL_DAYS: i64 = 30;
 
+/// 音频探测负结果（value_json = 'false'）的独立 TTL：作品可能晚于发售被外站收录，
+/// "未收录"结论只保留 3 天，过期后重新探测。
+pub const HAS_AUDIO_FALSE_TTL_DAYS: i64 = 3;
+
 /// 读 web_cache（反序列化为 T）。命中即刷新 last_access（滑动 TTL 续期）。
 pub fn web_cache_get<T: serde::de::DeserializeOwned>(
     conn: &Connection,
@@ -1012,6 +1016,37 @@ pub fn web_cache_get<T: serde::de::DeserializeOwned>(
         )
         .optional()?;
     let Some(json) = row else { return Ok(None) };
+    conn.execute(
+        "UPDATE web_cache SET last_access = datetime('now') WHERE key = ?1",
+        params![key],
+    )?;
+    Ok(serde_json::from_str(&json).ok())
+}
+
+/// 读 web_cache，带最长陈旧度：命中但 updated_at 早于 max_age_secs 秒前时视为未命中
+/// （不续期，调用方回源后会 web_cache_put 覆盖）。用于"快照长期保留、内容需要保鲜"的
+/// 条目——比如最新页列表：30 天不删省流量，但超过 1 小时就重新抓取。
+pub fn web_cache_get_fresh<T: serde::de::DeserializeOwned>(
+    conn: &Connection,
+    key: &str,
+    max_age_secs: i64,
+) -> Result<Option<T>, rusqlite::Error> {
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT value_json, updated_at FROM web_cache WHERE key = ?1",
+            params![key],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((json, updated_at)) = row else { return Ok(None) };
+    let stale: bool = conn.query_row(
+        "SELECT datetime(?1) < datetime('now', ?2)",
+        params![updated_at, format!("-{max_age_secs} seconds")],
+        |r| r.get(0),
+    )?;
+    if stale {
+        return Ok(None);
+    }
     conn.execute(
         "UPDATE web_cache SET last_access = datetime('now') WHERE key = ?1",
         params![key],
@@ -1040,13 +1075,23 @@ pub fn web_cache_put<T: serde::Serialize>(
     Ok(())
 }
 
-/// 删除 web_cache 中 30 天（WEB_CACHE_TTL_DAYS）未访问的条目，返回删除行数。
+/// 删除 web_cache 中过期条目，返回删除行数。
+/// 常规条目 30 天（WEB_CACHE_TTL_DAYS）未访问删除；音频探测负结果
+/// （value_json = 'false' 的 asmr:has_audio:* 条目）超过 3 天（HAS_AUDIO_FALSE_TTL_DAYS）即删。
 pub fn web_cache_cleanup(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.execute(
+    let n = conn.execute(
         "DELETE FROM web_cache
          WHERE last_access < datetime('now', ?1)",
         params![format!("-{WEB_CACHE_TTL_DAYS} days")],
-    )
+    )?;
+    // "false" 字面量在 JSON 里就是 false，与类型无关地覆盖所有负结果条目
+    let n_false = conn.execute(
+        "DELETE FROM web_cache
+         WHERE value_json = 'false'
+           AND updated_at < datetime('now', ?1)",
+        params![format!("-{HAS_AUDIO_FALSE_TTL_DAYS} days")],
+    )?;
+    Ok(n + n_false)
 }
 
 #[cfg(test)]
@@ -1386,6 +1431,69 @@ mod tests {
         assert!(web_cache_get::<bool>(&conn, "dlsite:latest:release:p1").unwrap().is_none());
         assert_eq!(
             web_cache_get::<bool>(&conn, "asmr:has_audio:RJ1").unwrap(),
+            Some(true)
+        );
+    }
+
+    /// web_cache_get_fresh：新鲜条目命中，超过 max_age 视为未命中且不续期。
+    #[test]
+    fn test_web_cache_get_fresh_max_age() {
+        let conn = test_conn();
+        web_cache_put(&conn, "dlsite:latest:release:p1", &vec![1i32]).unwrap();
+        // 刚写入的条目：1 小时窗口内命中
+        let got: Option<Vec<i32>> =
+            web_cache_get_fresh(&conn, "dlsite:latest:release:p1", 3600).unwrap();
+        assert_eq!(got, Some(vec![1]));
+
+        // 拨回 2 小时前：视为未命中（返回 None），且 last_access 不续期
+        conn.execute(
+            "UPDATE web_cache SET updated_at = datetime('now', '-2 hours'),
+             last_access = datetime('now', '-2 hours')
+             WHERE key = 'dlsite:latest:release:p1'",
+            [],
+        )
+        .unwrap();
+        let got: Option<Vec<i32>> =
+            web_cache_get_fresh(&conn, "dlsite:latest:release:p1", 3600).unwrap();
+        assert!(got.is_none(), "超过 max_age 的条目应视为未命中");
+        let access: String = conn
+            .query_row(
+                "SELECT last_access FROM web_cache WHERE key = 'dlsite:latest:release:p1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let before_now: bool = conn
+            .query_row("SELECT datetime(?1) < datetime('now')", params![access], |r| r.get(0))
+            .unwrap();
+        assert!(before_now, "未命中时 last_access 不应被续期");
+    }
+
+    /// 清理的 false 双窗口：负结果（value_json = 'false'）3 天即删，
+    /// 正结果与其它 JSON 不受影响。
+    #[test]
+    fn test_web_cache_cleanup_false_ttl_window() {
+        let conn = test_conn();
+        web_cache_put(&conn, "asmr:has_audio:RJ_OLD", &false).unwrap();
+        web_cache_put(&conn, "asmr:has_audio:RJ_NEW", &false).unwrap();
+        web_cache_put(&conn, "asmr:has_audio:RJ_TRUE", &true).unwrap();
+        conn.execute(
+            "UPDATE web_cache SET updated_at = datetime('now', '-4 days')
+             WHERE key IN ('asmr:has_audio:RJ_OLD', 'asmr:has_audio:RJ_TRUE')",
+            [],
+        )
+        .unwrap();
+        // RJ_OLD：false 且 4 天前 → 删；RJ_TRUE：true 且 4 天前 → 保留（30 天窗口）；
+        // RJ_NEW：false 但 4 天内 → 保留
+        let removed = web_cache_cleanup(&conn).unwrap();
+        assert_eq!(removed, 1);
+        assert!(web_cache_get::<bool>(&conn, "asmr:has_audio:RJ_OLD").unwrap().is_none());
+        assert_eq!(
+            web_cache_get::<bool>(&conn, "asmr:has_audio:RJ_NEW").unwrap(),
+            Some(false)
+        );
+        assert_eq!(
+            web_cache_get::<bool>(&conn, "asmr:has_audio:RJ_TRUE").unwrap(),
             Some(true)
         );
     }
