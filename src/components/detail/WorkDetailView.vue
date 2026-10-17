@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import {
   ArrowLeft,
   BookmarkCheck,
@@ -64,6 +64,9 @@ const props = defineProps<{
   errorLinkLabel?: string;
   retryLabel?: string;
 }>();
+
+/* 封面加载失败（asmr.one 部分作品源站没有封面图，代理返回 502）时显示占位图标 */
+const coverFailed = ref(false);
 
 const emit = defineEmits<{
   (e: "retry"): void;
@@ -175,7 +178,7 @@ function actionClass(a: DetailAction) {
     <!-- 双列：封面 + 信息 -->
     <div class="detail">
       <div class="dcover">
-        <img v-if="coverUrl" :src="coverUrl" decoding="async" />
+        <img v-if="coverUrl && !coverFailed" :src="coverUrl" decoding="async" @error="coverFailed = true" />
         <div v-else class="w-full h-full flex items-center justify-center" style="color: var(--label-3)">
           <ImageOff :size="40" />
         </div>

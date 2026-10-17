@@ -29,6 +29,9 @@ const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? 
 const coverSrc = computed(() => imgUrl(props.item.cover_url));
 const title = computed(() => props.item.title || props.item.rj_code || `#${props.item.id}`);
 
+/* 封面加载失败（asmr.one 部分作品源站没有封面图，代理返回 502）时显示占位图标 */
+const coverFailed = ref(false);
+
 /* 元数据结构与作品库卡片（WorkCard）一致：RJ 号+声优 / 发售日期+数量 */
 const actorsText = computed(() => props.item.vas.join(" / "));
 const dateText = computed(() => props.item.release?.slice(0, 10) || "");
@@ -60,10 +63,11 @@ function toggleFavorite() {
     <!-- 封面（4:3 裁切，hover 缩放） -->
     <div class="oc-cover">
       <img
-        v-if="coverSrc"
+        v-if="coverSrc && !coverFailed"
         :src="coverSrc"
         :alt="title"
         loading="lazy"
+        @error="coverFailed = true"
       />
       <div v-else class="w-full h-full flex items-center justify-center" style="color: var(--label-3)">
         <ImageOff :size="28" />
