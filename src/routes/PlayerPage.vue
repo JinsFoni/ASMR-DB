@@ -15,10 +15,12 @@ import {
   Monitor,
   Loader2,
   ListMusic,
+  Heart,
   ImageOff,
 } from "lucide-vue-next";
 import { usePlayerStore } from "../stores/player";
-import { imgUrl } from "../lib/api";
+import { imgUrl, asmrSetFavorite } from "../lib/api";
+;
 
 const router = useRouter();
 const player = usePlayerStore();
@@ -66,6 +68,28 @@ function onSeekClick(e: MouseEvent) {
 function cycleLoop() {
   player.loopMode =
     player.loopMode === "none" ? "all" : player.loopMode === "all" ? "one" : "none";
+}
+
+/* 收藏到 asmr.one 账号：仅在线播放的作品有 asmr id，本地作品不显示按钮 */
+const asmrId = computed(() => player.work?.work.asmr_online_id ?? null);
+const marked = computed(() => !!player.work?.work.asmr_marked);
+const favLoading = ref(false);
+async function toggleFavorite() {
+  const id = asmrId.value;
+  if (id == null || favLoading.value) return;
+  const w = player.work!;
+  const next = !marked.value;
+  // 乐观更新：立即切换图标，失败后回滚（与在线卡片收藏逻辑一致）
+  w.work.asmr_marked = next;
+  favLoading.value = true;
+  try {
+    await asmrSetFavorite(id, next);
+  } catch (e) {
+    w.work.asmr_marked = !next;
+    alert(`收藏同步失败: ${e}`);
+  } finally {
+    favLoading.value = false;
+  }
 }
 
 onMounted(() => {
@@ -141,6 +165,16 @@ onMounted(() => {
 
             <!-- 主控制 -->
             <div class="bigctrls">
+              <button
+                v-if="asmrId != null"
+                class="bctrl fav"
+                :class="{ on: marked }"
+                :title="marked ? '取消收藏' : '收藏到 asmr.one 账号'"
+                @click="toggleFavorite"
+              >
+                <Loader2 v-if="favLoading" :size="20" class="animate-spin" />
+                <Heart v-else :size="20" />
+              </button>
               <button class="bctrl" :title="'循环模式: ' + player.loopMode" @click="cycleLoop">
                 <Repeat1 v-if="player.loopMode === 'one'" :size="20" style="color: var(--blue-deep)" />
                 <Repeat v-else :size="20" :style="player.loopMode === 'all' ? 'color: var(--blue-deep)' : ''" />
@@ -459,6 +493,13 @@ onMounted(() => {
 .bctrl:hover,
 .bplay:hover {
   transform: scale(1.1);
+}
+/* 收藏按钮：与在线卡片收藏同色（已收藏红心实心） */
+.bctrl.fav.on {
+  color: #ff375f;
+}
+.bctrl.fav.on :deep(svg) {
+  fill: #ff375f;
 }
 .vol {
   display: flex;

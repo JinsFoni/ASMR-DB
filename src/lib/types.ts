@@ -25,6 +25,10 @@ export interface Work {
   description_zh: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** asmr.one 在线作品的数字 id（仅在线播放的临时 Work 有，播放器收藏按钮用） */
+  asmr_online_id?: number | null;
+  /** 当前用户是否已在 asmr.one 收藏该作品 */
+  asmr_marked?: boolean;
 }
 
 export interface WorkView {

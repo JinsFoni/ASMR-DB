@@ -268,6 +268,7 @@ pub async fn work_detail(
         .await
         .map_err(AppError::new)?;
     let items = annotate_local(&state, vec![detail]).await?;
+    let items = annotate_marked(&state, items).await?;
     Ok(Json(items.into_iter().next().unwrap_or_default()))
 }
 

@@ -265,5 +265,8 @@ export function buildFakeWork(
     dlsite_url: s?.dlsite_url ?? `https://www.dlsite.com/maniax/work/=/product_id/${rj}.html`,
     created_at: null,
     updated_at: null,
+    // 在线特有：asmr.one 数字 id + 收藏态，播放器页收藏按钮依赖这两个字段
+    asmr_online_id: a && source === "asmr" ? a.id : null,
+    asmr_marked: a?.user_marked ?? false,
   };
 }
