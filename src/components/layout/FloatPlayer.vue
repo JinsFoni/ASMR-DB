@@ -134,19 +134,19 @@ function goFullscreen() {
 <style scoped>
 .fplayer {
   position: fixed;
-  right: 16px;
+  right: 20px;
   bottom: 88px;
   z-index: 70;
-  width: 216px;
-  border-radius: 20px;
+  width: 260px;
+  border-radius: 22px;
   box-shadow:
     0 24px 60px -16px rgba(0, 0, 0, 0.8),
     inset 0 0 0 0.5px rgba(255, 255, 255, 0.16);
-  padding: 14px 14px 12px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
 }
 html[data-theme="light"] .fplayer,
 html[data-theme="sakura"] .fplayer {
