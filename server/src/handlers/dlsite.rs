@@ -3,9 +3,10 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::api::asmr_online::AsmrWorksPage;
 use crate::api::proxy::ProxyConfig;
 use crate::api::ranking;
-use crate::db::queries;
+use crate::db::{self, queries};
 use crate::state::{AppError, SharedState};
 
 /// 兼容常见别名单词，统一映射为 DLsite 的周期路径段。
@@ -152,15 +153,49 @@ pub async fn get_latest(
     .await
     .map_err(AppError::new)??;
 
+    // 读穿两层：内存 5 分钟 → web_cache 表 30 天滑动 TTL → DLsite 回源写回两级。
+    // 列表页数据在"最新页"语境下 30 天内基本稳定（同一页的发售日排序不变），
+    // 长缓存的收益是重启/次日访问毫秒级返回；local_work_id 标注每次重算，不受缓存影响。
+    let cache_key = format!("dlsite:latest:{order}:p{page}");
     let page_data = crate::api::cache::dlsitecache::latest_page()
         .get_or_fetch(&format!("order:{order}:page:{page}"), {
+            let state = state.clone();
             let proxy = proxy.clone();
+            let cache_key = cache_key.clone();
             move || async move {
-                tokio::task::spawn_blocking(move || {
+                // 内存未命中 → 查 DB（30 天滑动 TTL）
+                let from_db = tokio::task::spawn_blocking({
+                    let state = state.clone();
+                    let cache_key = cache_key.clone();
+                    move || -> Option<AsmrWorksPage> {
+                        let conn = state.db.get().ok()?;
+                        db::queries::web_cache_get(&conn, &cache_key).ok().flatten()
+                    }
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+                if let Some(p) = from_db {
+                    return Ok(p);
+                }
+                // DB 没有 → DLsite 回源，成功后写回 DB
+                let fetched = tokio::task::spawn_blocking(move || {
                     crate::api::dlsite_latest::fetch_latest_page(&proxy, &order, page)
                 })
                 .await
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+                if let Ok(p) = &fetched {
+                    let _ = tokio::task::spawn_blocking({
+                        let state = state.clone();
+                        let p = p.clone();
+                        move || {
+                            if let Ok(conn) = state.db.get() {
+                                let _ = db::queries::web_cache_put(&conn, &cache_key, &p);
+                            }
+                        }
+                    })
+                    .await;
+                }
+                fetched
             }
         })
         .await
@@ -175,7 +210,6 @@ pub async fn get_latest(
         "hasNext": page_data.has_next,
     })))
 }
-
 #[derive(Deserialize)]
 pub struct RefreshBody {
     /// 不传或为空时刷新全部 5 个周期

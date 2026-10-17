@@ -283,5 +283,21 @@ fn migrate(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
         [],
     )?;
 
+    // 通用外网数据 DB 缓存（滑动 TTL）：列表页/音频探测等 JSON 结果。
+    // 命中即刷新 last_access（重置 TTL）；web_cache_cleanup 定期删除 30 天未访问条目。
+    conn.execute(
+        r#"
+        CREATE TABLE IF NOT EXISTS web_cache (
+            key         TEXT PRIMARY KEY,
+            value_json  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            last_access TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_web_cache_access
+        ON web_cache(last_access);
+        "#,
+        [],
+    )?;
+
     Ok(())
 }

@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::db::models::{Tag, Track, Work, WorkView};
-use crate::db::queries;
+use crate::db::{self, queries};
 use crate::state::{AppError, SharedState};
 
 // ============================= 作品 =============================
@@ -444,21 +444,44 @@ pub struct AsmrRjQuery {
 }
 
 /// HEAD 存在性探测：asmr.one 是否收录该作品且有可播放音频。
-/// 复用 tracks JSON 缓存，成功且至少一条可播才返回 200；未收录/无音频返回 404，
-/// 供列表页判断播放按钮显隐（体积远小于拉全量音轨列表）。
+/// 读穿两层：web_cache 表 30 天滑动 TTL（key: has_audio:RJ）→ asmr.one 回源写回。
+/// 成功且至少一条可播返回 200（缓存 true）；未收录/无音频返回 404（缓存 false，
+/// 避免列表页每次加载都对全部未收录作品打一遍外网）。
 pub async fn head_asmrone_tracks(
     State(state): State<SharedState>,
     Query(q): Query<AsmrRjQuery>,
 ) -> StatusCode {
-    match fetch_asmr_tracks_json(&state, &q.rj).await {
-        Ok(v) if crate::api::asmrone::collect_tracks_and_subtitles(&v)
-            .iter()
-            .any(|f| !f.stream_url.trim().is_empty()) =>
-        {
-            StatusCode::OK
+    let cache_key = format!("asmr:has_audio:{}", q.rj.trim().to_uppercase());
+    let cached = tokio::task::spawn_blocking({
+        let state = state.clone();
+        let cache_key = cache_key.clone();
+        move || -> Option<bool> {
+            let conn = state.db.get().ok()?;
+            db::queries::web_cache_get(&conn, &cache_key).ok().flatten()
         }
-        _ => StatusCode::NOT_FOUND,
+    })
+    .await
+    .ok()
+    .flatten();
+    if let Some(has) = cached {
+        return if has { StatusCode::OK } else { StatusCode::NOT_FOUND };
     }
+    let has = match fetch_asmr_tracks_json(&state, &q.rj).await {
+        Ok(v) => crate::api::asmrone::collect_tracks_and_subtitles(&v)
+            .iter()
+            .any(|f| !f.stream_url.trim().is_empty()),
+        Err(_) => false,
+    };
+    let _ = tokio::task::spawn_blocking({
+        let state = state.clone();
+        move || {
+            if let Ok(conn) = state.db.get() {
+                let _ = db::queries::web_cache_put(&conn, &cache_key, &has);
+            }
+        }
+    })
+    .await;
+    if has { StatusCode::OK } else { StatusCode::NOT_FOUND }
 }
 
 pub async fn list_asmrone_tree(

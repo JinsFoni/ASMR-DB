@@ -126,7 +126,7 @@ pub async fn import_by_rj(
 }
 
 /// 只抓取元数据（不保存入库），用于导入前预览与在线卡片元数据补齐。
-/// 读穿三级：内存 TTL（5min）→ work_meta_cache 表（24h）→ 外网回源并写回两级。
+/// 读穿三级：内存 TTL（5min）→ work_meta_cache 表（30 天滑动 TTL）→ 外网回源并写回两级。
 /// 重启进程后内存缓存清空，但表里的数据仍在，未入库作品的卡片补齐不再重新打外网。
 pub async fn preview_by_rj(
     State(state): State<SharedState>,
@@ -154,7 +154,7 @@ pub async fn preview_by_rj(
                     let source_key = source_key.clone();
                     move || -> Option<ScrapedWork> {
                         let conn = state.db.get().ok()?;
-                        queries::get_work_meta(&conn, &rj, &source_key, 24).ok().flatten()
+                        queries::get_work_meta(&conn, &rj, &source_key, 24 * 30).ok().flatten()
                     }
                 })
                 .await

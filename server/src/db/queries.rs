@@ -940,7 +940,7 @@ pub fn rankings_stale(
 }
 
 /// 读取在线作品元数据缓存（work_meta_cache 表）。max_age_hours 内视为新鲜；
-/// 过期条目顺手删除，避免表无限增长。
+/// 命中即刷新 fetched_at（滑动 TTL：持续访问就不过期）；过期条目顺手删除，避免表无限增长。
 pub fn get_work_meta(
     conn: &Connection,
     rj: &str,
@@ -970,6 +970,12 @@ pub fn get_work_meta(
         )?;
         return Ok(None);
     }
+    // 滑动续期：只要被访问过就重置计时（与 web_cache 的 30 天滑动 TTL 语义一致）
+    conn.execute(
+        "UPDATE work_meta_cache SET fetched_at = datetime('now')
+         WHERE rj_code = ?1 COLLATE NOCASE AND source = ?2",
+        params![rj, source],
+    )?;
     Ok(serde_json::from_str(&json).ok())
 }
 
@@ -988,6 +994,61 @@ pub fn put_work_meta(conn: &Connection, w: &ScrapedWork, source: &str) -> Result
     Ok(())
 }
 
+// ============ web_cache：通用外网数据 DB 缓存（30 天滑动 TTL） ============
+
+/// web_cache 滑动 TTL 时长：命中即续期，30 天未访问的条目由 web_cache_cleanup 删除。
+pub const WEB_CACHE_TTL_DAYS: i64 = 30;
+
+/// 读 web_cache（反序列化为 T）。命中即刷新 last_access（滑动 TTL 续期）。
+pub fn web_cache_get<T: serde::de::DeserializeOwned>(
+    conn: &Connection,
+    key: &str,
+) -> Result<Option<T>, rusqlite::Error> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT value_json FROM web_cache WHERE key = ?1",
+            params![key],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(json) = row else { return Ok(None) };
+    conn.execute(
+        "UPDATE web_cache SET last_access = datetime('now') WHERE key = ?1",
+        params![key],
+    )?;
+    Ok(serde_json::from_str(&json).ok())
+}
+
+/// 写 web_cache（UPSERT，同时刷新 last_access）。
+pub fn web_cache_put<T: serde::Serialize>(
+    conn: &Connection,
+    key: &str,
+    value: &T,
+) -> Result<(), rusqlite::Error> {
+    let json = serde_json::to_string(value).map_err(|_| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::fmt::Error))
+    })?;
+    conn.execute(
+        r#"INSERT INTO web_cache (key, value_json, updated_at, last_access)
+           VALUES (?1, ?2, datetime('now'), datetime('now'))
+           ON CONFLICT(key) DO UPDATE SET
+            value_json = excluded.value_json,
+            updated_at = excluded.updated_at,
+            last_access = excluded.last_access"#,
+        params![key, json],
+    )?;
+    Ok(())
+}
+
+/// 删除 web_cache 中 30 天（WEB_CACHE_TTL_DAYS）未访问的条目，返回删除行数。
+pub fn web_cache_cleanup(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM web_cache
+         WHERE last_access < datetime('now', ?1)",
+        params![format!("-{WEB_CACHE_TTL_DAYS} days")],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -996,6 +1057,18 @@ mod tests {
     fn test_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        // web_cache（通用外网数据缓存）与生产 schema 保持一致
+        conn.execute_batch(
+            r#"
+            CREATE TABLE web_cache (
+                key         TEXT PRIMARY KEY,
+                value_json  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                last_access TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            "#,
+        )
+        .unwrap();
         conn.execute_batch(
             r#"
             CREATE TABLE works (
@@ -1260,5 +1333,60 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM work_meta_cache", [], |r| r.get(0))
             .unwrap();
         assert_eq!(cnt, 1);
+    }
+
+    #[test]
+    fn test_web_cache_roundtrip_sliding_ttl_and_cleanup() {
+        let conn = test_conn();
+
+        // 写入 + 读出（JSON 往返一致）
+        web_cache_put(&conn, "dlsite:latest:release:p1", &vec![1i32, 2, 3]).unwrap();
+        let got: Vec<i32> = web_cache_get(&conn, "dlsite:latest:release:p1").unwrap().unwrap();
+        assert_eq!(got, vec![1, 2, 3]);
+
+        // 不存在的 key 返回 None
+        assert!(web_cache_get::<Vec<i32>>(&conn, "missing").unwrap().is_none());
+
+        // UPSERT：同 key 覆盖，不新增行
+        web_cache_put(&conn, "dlsite:latest:release:p1", &vec![9i32]).unwrap();
+        let got: Vec<i32> = web_cache_get(&conn, "dlsite:latest:release:p1").unwrap().unwrap();
+        assert_eq!(got, vec![9]);
+        let cnt: i64 = conn
+            .query_row("SELECT COUNT(*) FROM web_cache", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cnt, 1);
+
+        // 滑动 TTL：访问刷新 last_access，30 天内不过期
+        // 手工把 last_access 拨回 29 天前，访问一次后应重置为现在
+        conn.execute(
+            "UPDATE web_cache SET last_access = datetime('now', '-29 days')",
+            [],
+        )
+        .unwrap();
+        assert!(web_cache_get::<Vec<i32>>(&conn, "dlsite:latest:release:p1").unwrap().is_some());
+        let stale_cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM web_cache WHERE last_access < datetime('now', '-30 days')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stale_cnt, 0, "访问后 last_access 应已续期");
+
+        // 清理：30 天未访问的条目被删除，新鲜条目保留
+        web_cache_put(&conn, "asmr:has_audio:RJ1", &true).unwrap();
+        conn.execute(
+            "UPDATE web_cache SET last_access = datetime('now', '-31 days')
+             WHERE key = 'dlsite:latest:release:p1'",
+            [],
+        )
+        .unwrap();
+        let removed = web_cache_cleanup(&conn).unwrap();
+        assert_eq!(removed, 1);
+        assert!(web_cache_get::<bool>(&conn, "dlsite:latest:release:p1").unwrap().is_none());
+        assert_eq!(
+            web_cache_get::<bool>(&conn, "asmr:has_audio:RJ1").unwrap(),
+            Some(true)
+        );
     }
 }

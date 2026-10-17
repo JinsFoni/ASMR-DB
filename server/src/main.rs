@@ -145,6 +145,33 @@ async fn main() {
         });
     }
 
+    // ============ web_cache 滑动 TTL 清理任务 ============
+    // 每天清一次 30 天未访问的外网缓存条目（列表页/音频探测/元数据）。
+    {
+        let state = state.clone();
+        tokio::spawn(async move {
+            loop {
+                let removed = tokio::task::spawn_blocking({
+                    let state = state.clone();
+                    move || -> usize {
+                        state
+                            .db
+                            .get()
+                            .ok()
+                            .and_then(|conn| db::queries::web_cache_cleanup(&conn).ok())
+                            .unwrap_or(0)
+                    }
+                })
+                .await
+                .unwrap_or(0);
+                if removed > 0 {
+                    println!("🧹 web_cache 清理：删除 {removed} 条 30 天未访问条目");
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
+            }
+        });
+    }
+
     let static_service = ServeDir::new(&dist_dir)
         .append_index_html_on_directories(true)
         .not_found_service(ServeFile::new(dist_dir.join("index.html")));
