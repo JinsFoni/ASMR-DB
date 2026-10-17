@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { BookmarkCheck, Captions, Heart, ImageOff, Loader2, Pause, Play, Star } from "lucide-vue-next";
+import { BookmarkCheck, Captions, Heart, Loader2, Pause, Play, Star } from "lucide-vue-next";
 import { imgUrl } from "../../lib/api";
 import type { AsmrOnlineWork } from "../../lib/types";
 
@@ -29,8 +29,9 @@ const localId = computed(() => props.localWorkId ?? props.item.local_work_id ?? 
 const coverSrc = computed(() => imgUrl(props.item.cover_url));
 const title = computed(() => props.item.title || props.item.rj_code || `#${props.item.id}`);
 
-/* 封面加载失败（asmr.one 部分作品源站没有封面图，代理返回 502）时显示占位图标 */
+/* 封面缺失或加载失败（asmr.one 部分作品源站没有封面图，代理返回 502）时用默认图 */
 const coverFailed = ref(false);
+const DEFAULT_COVER = "/default-cover.png";
 
 /* 元数据结构与作品库卡片（WorkCard）一致：RJ 号+声优 / 发售日期+数量 */
 const actorsText = computed(() => props.item.vas.join(" / "));
@@ -69,9 +70,7 @@ function toggleFavorite() {
         loading="lazy"
         @error="coverFailed = true"
       />
-      <div v-else class="w-full h-full flex items-center justify-center" style="color: var(--label-3)">
-        <ImageOff :size="28" />
-      </div>
+      <img v-else :src="DEFAULT_COVER" :alt="title" class="default-cover" />
 
       <!-- 左上角：收藏到 asmr.one 账号 -->
       <button

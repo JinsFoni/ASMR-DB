@@ -9,7 +9,6 @@ import {
   FolderPlus,
   Globe,
   Headphones,
-  ImageOff,
   Languages,
   Library,
   Loader2,
@@ -65,8 +64,9 @@ const props = defineProps<{
   retryLabel?: string;
 }>();
 
-/* 封面加载失败（asmr.one 部分作品源站没有封面图，代理返回 502）时显示占位图标 */
+/* 封面加载失败（asmr.one 部分作品源站没有封面图，代理返回 502）时用默认图 */
 const coverFailed = ref(false);
+const DEFAULT_COVER = "/default-cover.png";
 
 const emit = defineEmits<{
   (e: "retry"): void;
@@ -179,9 +179,7 @@ function actionClass(a: DetailAction) {
     <div class="detail">
       <div class="dcover">
         <img v-if="coverUrl && !coverFailed" :src="coverUrl" decoding="async" @error="coverFailed = true" />
-        <div v-else class="w-full h-full flex items-center justify-center" style="color: var(--label-3)">
-          <ImageOff :size="40" />
-        </div>
+        <img v-else :src="DEFAULT_COVER" decoding="async" class="default-cover" />
       </div>
 
       <div class="dtitle min-w-0">
